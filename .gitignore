@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Ambientes virtuais
+venv/
+.venv/
+env/
+.env/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# IDEs
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Resultado temporário gerado em runtime (não versionar)
+resultado_zoneamento_temp.parquet
+
+# Arquivos grandes (shapefiles, CSVs intermediários)
+BR_Municipios_2025/
+*.csv
+*.json
+*.xlsx
+*.zip
+*.tar.gz
+
+# Pipeline de dados local (128 MB — não vai ao GitHub)
+NOVO APP/
+
+# Dados brutos de interpolação
+interpolacao_completa_temperatura_156_semanas/
+output_interpolacao/
+dados_altitude_topodata/
+pedo_area/
+teste_precipitacao_sem1/
+
+# Binários e modelos treinados
+*.joblib
+*.shp
+*.dbf
+*.shx
+*.cpg
+*.prj
+*.png
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs e checkpoints do projeto
+*.log
+*checkpoint*.json
+altitude_checkpoint*.json
