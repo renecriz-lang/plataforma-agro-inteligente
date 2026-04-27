@@ -45,6 +45,42 @@ hero_banner(
     icon="🌾",
 )
 
+# ── Como usar ──────────────────────────────────────────────────────────────
+with st.expander("ℹ️ Como usar este módulo", expanded=False):
+    st.markdown("""
+**Siga os passos abaixo para simular o zoneamento agroclimático:**
+
+**1. Configure os filtros (barra lateral)**
+Escolha a base de dados (agregação temporal), o modo de simulação (**Dias** ou **GDD**),
+e aplique os filtros de altitude e tipo de solo para restringir a área de análise.
+
+**2. Defina os estádios fenológicos**
+Para cada um dos 7 estádios da cevada, informe a duração em dias (modo Dias) ou o
+acúmulo de grau-dia necessário (modo GDD). Ative e configure os limites climáticos
+opcionais — precipitação acumulada, temperatura média, máxima e mínima — que a cultura
+exige em cada fase.
+
+**3. Clique em "Processar Zoneamento"**
+O sistema varre os 36 decêndios possíveis de plantio para todos os municípios filtrados
+e identifica quais janelas de semeadura atendem a todos os requisitos definidos.
+
+**4. Clique em "Gerar Mapa e Tabela"**
+Visualize no mapa interativo os municípios aptos (🟢 verde = ≥ 3 janelas; 🟠 laranja = 1–2
+janelas). Filtre a tabela por UF e número mínimo de janelas, e exporte o resultado em CSV.
+
+**5. Consulte os detalhes de um município**
+Selecione um município na lista abaixo da tabela para ver todas as janelas de plantio aptas
+com as datas estimadas de colheita.
+
+---
+**Sobre os decêndios:** o ano é dividido em 36 períodos de ~10 dias
+(D1 = 01–10 Jan · D2 = 11–20 Jan · … · D36 = 21–31 Dez).
+Cada decêndio representa uma possível data de semeadura e o ciclo completo é simulado a partir dele.
+
+**Fatores limitantes:** municípios sem nenhuma janela apta têm seus fatores restritivos
+identificados por estádio e motivo (excesso/déficit de precipitação, calor excessivo, etc.).
+""")
+
 # ── Painel lateral ─────────────────────────────────────────────────────────
 st.sidebar.header("⚙️ Configuração Geral")
 
@@ -386,7 +422,8 @@ if st.session_state.get("show_results") and has_result:
     ufs   = ["Todos"] + sorted(df_res["UF"].unique().tolist())
     cf1, cf2 = st.columns([1, 2])
     uf_sel   = cf1.selectbox("Filtrar por UF:", ufs)
-    min_jan  = cf2.slider("Mínimo de janelas:", 1, int(df_res["Num_Decendios_Aptos"].max()), 1)
+    _max_jan = max(2, int(df_res["Num_Decendios_Aptos"].max()))
+    min_jan  = cf2.slider("Mínimo de janelas:", 1, _max_jan, 1)
 
     df_show = df_res.copy()
     if uf_sel != "Todos":
@@ -411,6 +448,43 @@ if st.session_state.get("show_results") and has_result:
         },
     )
     st.caption(f"Exibindo **{len(df_show):,}** município(s).")
+
+    # ── Detalhes do município ──────────────────────────────────────────────
+    if not df_show.empty:
+        st.markdown("---")
+        st.subheader("🔍 Detalhes do Município")
+
+        nomes_lista = df_show["Municipio"].tolist()
+        mun_sel = st.selectbox(
+            "Selecione um município para ver as janelas de plantio:",
+            nomes_lista,
+            key="mun_detail_sel",
+        )
+
+        row_d = df_show[df_show["Municipio"] == mun_sel].iloc[0]
+        janelas = [j.strip() for j in row_d["Janelas_Plantio"].split("|") if j.strip()]
+        alt_str = f"{int(row_d['Altitude_m'])} m" if pd.notna(row_d["Altitude_m"]) else "N/D"
+
+        col_info, col_jan = st.columns([1, 2])
+
+        with col_info:
+            st.markdown(
+                f"**📍 {row_d['Municipio']} / {row_d['UF']}**  \n"
+                f"⛰️ Altitude: **{alt_str}**  \n"
+                f"🌱 Solo: **{row_d['Solo_Dominante']}**  \n"
+                f"🌾 Janelas aptas: **{int(row_d['Num_Decendios_Aptos'])}**"
+            )
+            if row_d["Fatores_Limitantes"]:
+                lims = [l.strip() for l in row_d["Fatores_Limitantes"].split("|") if l.strip()]
+                if lims:
+                    st.markdown("**⚠️ Fatores Restritivos:**")
+                    for lim in lims:
+                        st.markdown(f"- {lim}")
+
+        with col_jan:
+            st.markdown(f"**🗓️ Janelas de Plantio Aptas ({len(janelas)}):**")
+            for j in janelas:
+                st.markdown(f"&nbsp;&nbsp;&nbsp;🗓️ {j}", unsafe_allow_html=True)
 
     csv_bytes = df_show.to_csv(index=False).encode("utf-8-sig")
     st.download_button(

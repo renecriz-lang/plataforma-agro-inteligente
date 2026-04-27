@@ -8,6 +8,7 @@ sys.path.insert(0, _HERE)
 
 from utils.data_loader import load_base, AGG_MODES
 from utils.design import inject_css, hero_banner, badge
+from utils.counter import increment, get_count, reset
 
 st.set_page_config(
     page_title="Plataforma Agro Inteligente",
@@ -16,6 +17,29 @@ st.set_page_config(
 )
 
 inject_css()
+
+# ── Contador de acessos ────────────────────────────────────────────────────
+# Incrementa uma vez por sessão do usuário
+if "counted" not in st.session_state:
+    st.session_state["counted"] = True
+    total_acessos = increment()
+else:
+    total_acessos = get_count()
+
+# ── Painel Admin (sidebar) ─────────────────────────────────────────────────
+ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", "agro2025")
+
+with st.sidebar:
+    st.markdown("---")
+    with st.expander("🔐 Admin"):
+        pwd = st.text_input("Senha:", type="password", key="admin_pwd")
+        if pwd == ADMIN_PASSWORD:
+            st.success(f"Total de acessos: **{get_count()}**")
+            if st.button("Zerar contador", type="primary"):
+                reset()
+                st.rerun()
+        elif pwd:
+            st.error("Senha incorreta.")
 
 # ── Hero ───────────────────────────────────────────────────────────────────
 hero_banner(
@@ -31,11 +55,12 @@ hero_banner(
 with st.spinner("Carregando base…"):
     df = load_base()
 
-col_a, col_b, col_c, col_d = st.columns(4)
+col_a, col_b, col_c, col_d, col_e = st.columns(5)
 col_a.metric("Municípios",        f"{len(df):,}")
 col_b.metric("Período base",      "2010–2025")
 col_c.metric("Decêndios / Mun.",  "36")
 col_d.metric("Estados cobertos",  df["estado"].nunique())
+col_e.metric("Acessos",           f"{total_acessos:,}")
 
 st.markdown("---")
 
