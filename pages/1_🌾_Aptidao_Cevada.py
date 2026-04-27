@@ -82,12 +82,8 @@ alt_range = st.sidebar.slider(
     value=(alt_min_val, alt_max_val), step=10,
 )
 
-solos_disp = sorted(
-    df_base["solo_1_ordem"]
-    .fillna("Não identificado")
-    .unique()
-    .tolist()
-)
+solo_col = df_base["solo_1_ordem"].astype(str).replace("nan", "Não identificado")
+solos_disp = sorted([v for v in solo_col.unique().tolist() if isinstance(v, str)])
 solos_sel = st.sidebar.multiselect(
     "Solo Dominante",
     options=solos_disp,
@@ -97,7 +93,7 @@ solos_sel = st.sidebar.multiselect(
 df_filtered = df_base[
     (df_base["altitude_media"].fillna(-1) >= alt_range[0])
     & (df_base["altitude_media"].fillna(-1) <= alt_range[1])
-    & (df_base["solo_1_ordem"].fillna("Não identificado").isin(solos_sel))
+    & (solo_col.isin(solos_sel))
 ].reset_index(drop=True)
 
 st.sidebar.metric("Municípios após filtros", f"{len(df_filtered):,}")

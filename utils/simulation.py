@@ -406,8 +406,9 @@ def _build_result(df_filtered: pd.DataFrame,
             "UF":                  row.estado,
             "Altitude_m":          round(float(row.altitude_media), 0)
                                    if pd.notna(row.altitude_media) else None,
-            "Solo_Dominante":      row.solo_1_ordem
-                                   if pd.notna(row.solo_1_ordem) else "Não identificado",
+            "Solo_Dominante":      str(row.solo_1_ordem)
+                                   if str(row.solo_1_ordem) not in ("nan", "None", "")
+                                   else "Não identificado",
             "Decendios_Aptos":     ", ".join(f"D{d}" for d in apt_dec_raw[i]),
             "Janelas_Plantio":     build_janelas_str(apt_dec_raw[i],
                                                      cycle_total_days, gdd_mode),
