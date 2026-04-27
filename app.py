@@ -27,7 +27,7 @@ else:
     total_acessos = get_count()
 
 # ── Painel Admin (sidebar) ─────────────────────────────────────────────────
-ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", "agro2025")
+ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", "")
 
 with st.sidebar:
     st.markdown("---")
