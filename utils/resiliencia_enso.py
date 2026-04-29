@@ -341,7 +341,63 @@ def historico_climatologico(df_mun: pd.DataFrame,
 
 
 # ============================================================
-# 7. Nível 4 — Validação produtiva (NOVO)
+# 7. Comparador de Cenários — agregação decendial por perfil
+# ============================================================
+
+def agregar_perfil_decendial(
+    df_clima_mun: pd.DataFrame,
+    anos: tuple[int, int],
+    fases: list[str],
+    intensidades: list[str],
+    variavel: str,
+) -> pd.DataFrame:
+    """Agrega o histórico filtrado e retorna estatísticas por decêndio.
+
+    Parâmetros:
+        df_clima_mun : long-format de um município (flag_cobertura filtrado internamente)
+        anos         : (ano_inicio, ano_fim), inclusivos
+        fases        : lista de {'El Niño', 'La Niña', 'Neutro'} — vazia = todas
+        intensidades : lista de {'Fraca', 'Moderada', 'Forte', 'Muito Forte'} — vazia = todas;
+                       ignorada para registros com fase == 'Neutro'
+        variavel     : 'prec_media' | 'tmax_media' | 'tmed_media' | 'tmin_media'
+
+    Retorna DataFrame com 36 linhas (uma por decêndio):
+        decendio | media | p10 | p50 | p90 | n_anos
+    """
+    _VAZIO = pd.DataFrame(columns=["decendio", "media", "p10", "p50", "p90", "n_anos"])
+
+    df = filtrar_validos(df_clima_mun)
+    df = df[df["ano"].between(anos[0], anos[1])]
+
+    if fases:
+        df = df[df["enso_fenomeno"].isin(fases)]
+
+    if intensidades:
+        mask_neutro = df["enso_fenomeno"] == "Neutro"
+        mask_match  = df["enso_intensidade"].isin(intensidades)
+        df = df[mask_neutro | mask_match]
+
+    if df.empty or variavel not in df.columns:
+        return _VAZIO
+
+    out = (
+        df.groupby("decendio", observed=True)[variavel]
+        .agg(
+            media="mean",
+            p10=lambda x: x.quantile(0.10),
+            p50="median",
+            p90=lambda x: x.quantile(0.90),
+            n_anos="count",
+        )
+        .reset_index()
+        .sort_values("decendio")
+        .reset_index(drop=True)
+    )
+    return out
+
+
+# ============================================================
+# 8. Nível 4 — Validação produtiva (NOVO)
 # ============================================================
 
 def rendimento_por_enso(df_prod_mun: pd.DataFrame,
