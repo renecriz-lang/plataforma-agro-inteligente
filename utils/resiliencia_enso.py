@@ -242,14 +242,14 @@ def construir_assinatura(df_mun: pd.DataFrame, ano: int,
         return None
 
     vec_parts = [
-        sub["prec_media"].values,
-        sub["tmax_media"].values,
-        sub["tmin_media"].values,
+        sub["prec_media"].values.astype(float),
+        sub["tmax_media"].values.astype(float),
+        sub["tmin_media"].values.astype(float),
     ]
     if "enso_indice" in sub.columns:
-        vec_parts.append([float(sub["enso_indice"].mean())])
+        vec_parts.append(np.array([float(sub["enso_indice"].mean())]))
 
-    vec = np.concatenate([v.astype(float) for v in vec_parts])
+    vec = np.concatenate(vec_parts)
     return None if np.any(np.isnan(vec)) else vec
 
 
