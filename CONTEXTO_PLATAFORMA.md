@@ -23,20 +23,21 @@ plataforma-agro-inteligente/          ← raiz do repo GitHub
 ├── .streamlit/config.toml            ← Tema visual verde-campo
 ├── data/
 │   ├── Base_Clima_media_geral.parquet      ← 4.6 MB, wide-format, 5573 mun × 151 col
-│   ├── Base_Producao_Compacta.parquet      ← ~5 MB, produção real por mun × cultura × ano
-│   ├── Base_Resiliencia_PreComp.parquet    ← ~2 MB, probabilidades pré-computadas por mun × evento × fase
+│   ├── Base_Producao_Compacta.parquet      ← ~3 MB, produção real por mun × cultura × ano
+│   ├── Base_Resiliencia_PreComp.parquet    ← ~0.1 MB, probabilidades pré-computadas por mun × evento × fase
 │   └── Base_Clima_Compacta.parquet         ← ~33 MB, baixado do GitHub Release v1.0-data na 1ª execução
 ├── pages/
 │   ├── 1_🌾_Aptidao_Cevada.py       ← Simulação fenológica (Dias + GDD)
 │   ├── 2_🌍_Gemeos_Climaticos.py    ← Análise de gêmeos climáticos
-│   └── 3_🌍_Resiliencia_ENSO.py     ← Análise de Resiliência ENSO (4 níveis)
+│   ├── 3_🌍_Resiliencia_ENSO.py     ← Análise de Resiliência ENSO (4 níveis)
+│   └── 4_📈_Comparador_Cenarios.py  ← Comparador de perfis históricos (anos × ENSO × intensidade)
 └── utils/
     ├── __init__.py
     ├── data_loader.py                ← Carregamento + 3 funções para módulo ENSO
     ├── simulation.py                 ← Motor matemático (Dias + GDD)
     ├── design.py                     ← CSS global, hero_banner(), badge()
     ├── twin_engine.py                ← Motor de gêmeos climáticos
-    └── resiliencia_enso.py           ← Motor ENSO (4 níveis, puramente descritivo)
+    └── resiliencia_enso.py           ← Motor ENSO (4 níveis) + agregar_perfil_decendial
 ```
 
 **Arquivos de pré-processamento** (ficam em `NOVO APP/`):
@@ -293,6 +294,7 @@ Os modos atuais são **Dias** e **GDD**. Para adicionar um novo:
 - [x] **Aptidão da Cevada** — simulação fenológica (Dias + GDD), mapa interativo
 - [x] **Gêmeos Climáticos** — similaridade climática entre municípios (euclidiana Z-score)
 - [x] **Resiliência ENSO** — 4 níveis: probabilidades condicionais, CDF empírica, análogos históricos, validação produtiva real
+- [x] **Comparador de Cenários** — perfis históricos (anos × ENSO × intensidade) sobrepostos em gráfico decendial com faixa p10–p90
 
 ### Módulo Resiliência ENSO — arquitetura
 

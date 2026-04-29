@@ -157,6 +157,34 @@ with col3:
         icon="🌊",
     )
 
+with col4:
+    st.markdown(
+        """
+        <div style="background:#fff;border:1px solid #d0e4d8;border-radius:16px;
+                    padding:1.5rem;box-shadow:0 2px 12px rgba(27,67,50,0.10)">
+          <div style="font-size:2.5rem;margin-bottom:0.5rem">📈</div>
+          <h3 style="color:#1b4332;margin:0 0 0.4rem 0;font-family:'Lora',serif">
+            Comparador de Cenários
+          </h3>
+          <p style="color:#4a6352;margin:0 0 1rem 0;font-size:0.95rem">
+            Monte perfis climáticos históricos combinando <strong>intervalo de anos,
+            fase e intensidade ENSO</strong> e compare num único gráfico decendial.
+            Responda: "El Niño Forte chove diferente de La Niña Forte aqui?"
+          </p>
+          <span style="background:#2d6a4f;color:#fff;padding:3px 12px;
+                       border-radius:99px;font-size:0.8rem;font-weight:600">
+            ✅ Disponível
+          </span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.page_link(
+        "pages/4_📈_Comparador_Cenarios.py",
+        label="Abrir módulo →",
+        icon="📈",
+    )
+
 # ── Rodapé ────────────────────────────────────────────────────────────────
 st.markdown("---")
 st.markdown(
