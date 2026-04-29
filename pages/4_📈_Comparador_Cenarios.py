@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_HERE, ".."))
@@ -50,11 +51,19 @@ ROTULOS_VAR = {
     "tmin_media": "Tmin média (°C)",
 }
 
-MESES_DECENDIOS = {
-    1: "Jan-1", 4: "Fev-1", 7: "Mar-1", 10: "Abr-1",
-    13: "Mai-1", 16: "Jun-1", 19: "Jul-1", 22: "Ago-1",
-    25: "Set-1", 28: "Out-1", 31: "Nov-1", 34: "Dez-1",
-}
+# Chuva = fluxo acumulável → barras; temperatura = estado contínuo → linhas
+VARIAVEIS_FLUXO  = {"prec_media"}
+VARIAVEIS_ESTADO = {"tmax_media", "tmed_media", "tmin_media"}
+
+def eh_variavel_de_fluxo(v: str) -> bool:
+    return v in VARIAVEIS_FLUXO
+
+# Divisão em semestres
+DECENDIOS_S1 = list(range(1, 19))   # Jan a Jun
+DECENDIOS_S2 = list(range(19, 37))  # Jul a Dez
+
+MESES_S1 = {1: "Jan-1", 4: "Fev-1", 7: "Mar-1", 10: "Abr-1", 13: "Mai-1", 16: "Jun-1"}
+MESES_S2 = {19: "Jul-1", 22: "Ago-1", 25: "Set-1", 28: "Out-1", 31: "Nov-1", 34: "Dez-1"}
 
 PERFIS_DEFAULT = [
     {"nome": "Média geral 2010–2025", "anos": (2010, 2025), "fases": [],        "intensidades": []},
@@ -205,8 +214,33 @@ st.markdown("---")
 # ── Gráfico de comparação ─────────────────────────────────────────────────────
 st.markdown(f"### 📊 {VARIAVEIS[variavel_key]} — {municipio_sel}/{estado_sel}")
 
-fig = go.Figure()
+modo_barras = eh_variavel_de_fluxo(variavel_key)
+
+# Aviso quando muitos perfis em modo barras com faixa
+if modo_barras and mostrar_faixa and len(st.session_state["perfis"]) > 3:
+    st.info(
+        "💡 Com mais de 3 perfis, sugerimos desativar **Mostrar faixa p10–p90** "
+        "para o gráfico de barras ficar mais legível."
+    )
+
+fig = make_subplots(
+    rows=2, cols=1,
+    row_heights=[0.5, 0.5],
+    vertical_spacing=0.16,
+    subplot_titles=("1º semestre — Jan a Jun", "2º semestre — Jul a Dez"),
+    shared_yaxes=True,
+)
+
 resumo_rows = []
+
+_HOVER = (
+    "<b>%{fullData.name}</b><br>"
+    "Decêndio %{x}<br>"
+    "Média: %{y:.1f}<br>"
+    "Mediana: %{customdata[2]:.1f}<br>"
+    "p10–p90: %{customdata[1]:.1f} – %{customdata[3]:.1f}<br>"
+    "n=%{customdata[0]} anos<extra></extra>"
+)
 
 for i, perfil in enumerate(st.session_state["perfis"]):
     df_agg = agregar_perfil_decendial(
@@ -225,90 +259,138 @@ for i, perfil in enumerate(st.session_state["perfis"]):
     n_min = int(df_agg["n_anos"].min())
     nome_legenda = perfil["nome"] + (" ⚠️" if n_min < 3 else "")
 
-    # Faixa p10-p90
-    if mostrar_faixa:
-        fill_rgba = _hex_to_rgba(cor, 0.12)
-        fig.add_trace(go.Scatter(
-            x=df_agg["decendio"].tolist(), y=df_agg["p90"].tolist(),
-            mode="lines", line=dict(width=0),
-            showlegend=False, hoverinfo="skip",
-            legendgroup=f"perfil_{i}",
-        ))
-        fig.add_trace(go.Scatter(
-            x=df_agg["decendio"].tolist(), y=df_agg["p10"].tolist(),
-            mode="lines", line=dict(width=0),
-            fill="tonexty", fillcolor=fill_rgba,
-            showlegend=False, hoverinfo="skip",
-            legendgroup=f"perfil_{i}",
-        ))
+    for row, decs_alvo in [(1, DECENDIOS_S1), (2, DECENDIOS_S2)]:
+        sub = df_agg[df_agg["decendio"].isin(decs_alvo)]
+        if sub.empty:
+            continue
 
-    # Linha da média
-    fig.add_trace(go.Scatter(
-        x=df_agg["decendio"].tolist(),
-        y=df_agg["media"].tolist(),
-        mode="lines+markers",
-        name=nome_legenda,
-        line=dict(color=cor, width=2.5),
-        marker=dict(size=4),
-        legendgroup=f"perfil_{i}",
-        customdata=df_agg[["n_anos", "p10", "p50", "p90"]].values,
-        hovertemplate=(
-            f"<b>{perfil['nome']}</b><br>"
-            "Decêndio %{x}<br>"
-            f"Média: %{{y:.1f}} {ROTULOS_VAR[variavel_key].split('(')[-1].rstrip(')')}<br>"
-            "Mediana: %{customdata[2]:.1f}<br>"
-            "p10–p90: %{customdata[1]:.1f} – %{customdata[3]:.1f}<br>"
-            "n=%{customdata[0]} anos<extra></extra>"
-        ),
-    ))
+        cd = sub[["n_anos", "p10", "p50", "p90"]].values
+        show_leg = (row == 1)
+
+        if modo_barras:
+            error_y = None
+            if mostrar_faixa:
+                error_y = dict(
+                    type="data",
+                    symmetric=False,
+                    array=(sub["p90"] - sub["media"]).values,
+                    arrayminus=(sub["media"] - sub["p10"]).values,
+                    color=_hex_to_rgba(cor, 0.55),
+                    thickness=1.2,
+                    width=3,
+                )
+            fig.add_trace(
+                go.Bar(
+                    x=sub["decendio"], y=sub["media"],
+                    name=nome_legenda,
+                    marker_color=cor,
+                    error_y=error_y,
+                    legendgroup=nome_legenda,
+                    showlegend=show_leg,
+                    customdata=cd,
+                    hovertemplate=_HOVER,
+                ),
+                row=row, col=1,
+            )
+        else:
+            # Faixa p10-p90 (linhas)
+            if mostrar_faixa:
+                fig.add_trace(
+                    go.Scatter(
+                        x=sub["decendio"], y=sub["p90"],
+                        mode="lines", line=dict(width=0),
+                        showlegend=False, hoverinfo="skip",
+                        legendgroup=nome_legenda,
+                    ),
+                    row=row, col=1,
+                )
+                fig.add_trace(
+                    go.Scatter(
+                        x=sub["decendio"], y=sub["p10"],
+                        mode="lines", line=dict(width=0),
+                        fill="tonexty", fillcolor=_hex_to_rgba(cor, 0.15),
+                        showlegend=False, hoverinfo="skip",
+                        legendgroup=nome_legenda,
+                    ),
+                    row=row, col=1,
+                )
+            fig.add_trace(
+                go.Scatter(
+                    x=sub["decendio"], y=sub["media"],
+                    mode="lines+markers",
+                    name=nome_legenda,
+                    line=dict(color=cor, width=2.5),
+                    marker=dict(size=5),
+                    legendgroup=nome_legenda,
+                    showlegend=show_leg,
+                    customdata=cd,
+                    hovertemplate=_HOVER,
+                ),
+                row=row, col=1,
+            )
 
     # Linha para tabela-resumo
-    n_anos_unicos = int(
-        df_clima_mun[
-            df_clima_mun["flag_cobertura"] == "OK"
-        ]["ano"].between(perfil["anos"][0], perfil["anos"][1]).sum() > 0
-        and df_agg["n_anos"].max()
-    )
     if variavel_key == "prec_media":
         val_resumo = f"{df_agg['media'].sum():.0f} mm/ano"
-        dec_max = int(df_agg.loc[df_agg["media"].idxmax(), "decendio"])
-        dec_min = int(df_agg.loc[df_agg["media"].idxmin(), "decendio"])
     else:
         val_resumo = f"{df_agg['media'].mean():.1f} °C (média anual)"
-        dec_max = int(df_agg.loc[df_agg["media"].idxmax(), "decendio"])
-        dec_min = int(df_agg.loc[df_agg["media"].idxmin(), "decendio"])
+    dec_max = int(df_agg.loc[df_agg["media"].idxmax(), "decendio"])
+    dec_min = int(df_agg.loc[df_agg["media"].idxmin(), "decendio"])
 
     resumo_rows.append({
-        "Perfil":        perfil["nome"],
-        "Anos":          f"{perfil['anos'][0]}–{perfil['anos'][1]}",
-        "Fases":         ", ".join(perfil["fases"]) or "Todas",
-        "Intens.":       ", ".join(perfil["intensidades"]) or "Todas",
-        "n máx/dec":     int(df_agg["n_anos"].max()),
-        "Resumo anual":  val_resumo,
-        "Dec. + alto":   f"D{dec_max}",
-        "Dec. + baixo":  f"D{dec_min}",
+        "Perfil":       perfil["nome"],
+        "Anos":         f"{perfil['anos'][0]}–{perfil['anos'][1]}",
+        "Fases":        ", ".join(perfil["fases"]) or "Todas",
+        "Intens.":      ", ".join(perfil["intensidades"]) or "Todas",
+        "n máx/dec":    int(df_agg["n_anos"].max()),
+        "Resumo anual": val_resumo,
+        "Dec. + alto":  f"D{dec_max}",
+        "Dec. + baixo": f"D{dec_min}",
     })
 
+# Eixos
+fig.update_xaxes(
+    tickmode="array",
+    tickvals=list(MESES_S1.keys()),
+    ticktext=list(MESES_S1.values()),
+    range=[0.4, 18.6],
+    showgrid=True, gridcolor="#eee",
+    row=1, col=1,
+)
+fig.update_xaxes(
+    tickmode="array",
+    tickvals=list(MESES_S2.keys()),
+    ticktext=list(MESES_S2.values()),
+    range=[18.4, 36.6],
+    title_text="Decêndio do ano",
+    showgrid=True, gridcolor="#eee",
+    row=2, col=1,
+)
+fig.update_yaxes(
+    title_text=ROTULOS_VAR[variavel_key],
+    showgrid=True, gridcolor="#eee",
+    zeroline=False,
+    row=1, col=1,
+)
+fig.update_yaxes(
+    title_text=ROTULOS_VAR[variavel_key],
+    showgrid=True, gridcolor="#eee",
+    zeroline=False,
+    row=2, col=1,
+)
+
 fig.update_layout(
-    xaxis=dict(
-        title="Decêndio do ano",
-        tickmode="array",
-        tickvals=list(MESES_DECENDIOS.keys()),
-        ticktext=list(MESES_DECENDIOS.values()),
-        tickangle=0,
-        showgrid=True, gridcolor="#eee",
-    ),
-    yaxis=dict(
-        title=ROTULOS_VAR[variavel_key],
-        showgrid=True, gridcolor="#eee",
-        zeroline=False,
-    ),
+    barmode="group" if modo_barras else "overlay",
+    bargap=0.20,
+    bargroupgap=0.05,
     hovermode="x unified",
-    height=520,
-    margin=dict(t=30, b=40, l=60, r=20),
+    height=720,
+    margin=dict(t=70, b=50, l=70, r=20),
     legend=dict(
-        orientation="h", yanchor="bottom", y=1.02,
-        xanchor="left", x=0, font=dict(size=11),
+        orientation="h",
+        yanchor="bottom", y=1.04,
+        xanchor="left", x=0,
+        font=dict(size=11),
     ),
     plot_bgcolor="white",
     paper_bgcolor="white",
