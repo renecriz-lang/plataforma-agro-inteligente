@@ -53,12 +53,7 @@ hero_banner(
     icon="🌍",
 )
 
-ANO_CORRENTE = 2026
 CULTURAS = ["Soja", "Milho", "Feijão", "Trigo", "Cevada"]
-
-# Decêndios já observados de 2026 (até ~abril = decêndio 11)
-DECENDIOS_OBSERVADOS = list(range(1, 12))
-DECENDIOS_FUTUROS    = list(range(12, 37))
 
 # ── Carga das bases leves (sempre disponíveis) ────────────────────────────────
 df_ref   = load_base("media_geral")
@@ -81,15 +76,6 @@ with st.sidebar:
     municipio_sel = st.selectbox("Município", muns_disp)
 
     cultura_sel = st.selectbox("Cultura", CULTURAS, index=0)
-
-    st.markdown("---")
-    st.markdown("**Decêndios já observados em 2026**")
-    dec_obs_max = st.slider(
-        "Até o decêndio:", min_value=1, max_value=36,
-        value=11, help="Decêndios 1-N serão usados como assinatura do ano atual"
-    )
-    decendios_obs = list(range(1, dec_obs_max + 1))
-    decendios_fut = list(range(dec_obs_max + 1, 37))
 
     st.markdown("---")
     with st.expander("⚙️ Personalizar limites dos eventos", expanded=False):
@@ -350,25 +336,44 @@ st.markdown("---")
 # ────────────────────────────────────────────────────────────────────────────
 # PAINEL C — Nível 3: Motor de análogos
 # ────────────────────────────────────────────────────────────────────────────
-st.markdown("## 🔍 Painel C — Anos análogos a 2026")
+
+# Ano corrente = maior ano disponível na base desse município
+ANO_ATUAL = int(df_clima_mun["ano"].max())
+
+# Detecta o último decêndio com flag_cobertura == 'OK' para o ano corrente
+mask_atual = (df_clima_mun["ano"] == ANO_ATUAL) & (df_clima_mun["flag_cobertura"] == "OK")
+_tem_dados_atuais = mask_atual.any()
+ultimo_dec_obs = int(df_clima_mun.loc[mask_atual, "decendio"].max()) if _tem_dados_atuais else 0
+decendios_obs_reais = list(range(1, ultimo_dec_obs + 1))
+decendios_fut_reais = list(range(ultimo_dec_obs + 1, 37))
+
+st.markdown(f"## 🔍 Painel C — Anos análogos a {ANO_ATUAL}")
 st.caption(
-    f"Os 5 anos da história mais parecidos com {ANO_CORRENTE} "
-    f"(com base nos decêndios 1–{dec_obs_max} já observados), "
+    f"Os 5 anos da história mais parecidos com {ANO_ATUAL} "
+    f"(com base nos decêndios 1–{ultimo_dec_obs} já observados em {ANO_ATUAL}), "
     "identificados por distância euclidiana Z-score sobre prec, tmax e tmin."
 )
 
-with st.spinner("Calculando análogos…"):
-    try:
-        df_analogos = motor_analogos(
-            df_clima_mun, ano_alvo=ANO_CORRENTE,
-            decendios_observados=decendios_obs, k=5
-        )
-    except Exception as e:
-        df_analogos = pd.DataFrame()
-        st.warning(f"Não foi possível calcular análogos: {e}")
+df_analogos = pd.DataFrame()
+if not _tem_dados_atuais:
+    st.info(f"Sem dados de {ANO_ATUAL} disponíveis para calcular análogos neste município.")
+elif len(decendios_obs_reais) < 3:
+    st.info(
+        f"Apenas {len(decendios_obs_reais)} decêndio(s) observado(s) em {ANO_ATUAL} "
+        "— mínimo recomendado: 3."
+    )
+else:
+    with st.spinner("Calculando análogos…"):
+        try:
+            df_analogos = motor_analogos(
+                df_clima_mun, ano_alvo=ANO_ATUAL,
+                decendios_observados=decendios_obs_reais, k=5,
+            )
+        except Exception as e:
+            st.warning(f"Não foi possível calcular análogos: {e}")
 
-if df_analogos.empty:
-    st.info(f"Dados insuficientes para calcular análogos de {ANO_CORRENTE}.")
+if df_analogos.empty and _tem_dados_atuais and len(decendios_obs_reais) >= 3:
+    st.info(f"Dados insuficientes para calcular análogos de {ANO_ATUAL}.")
 else:
     c1_c, c2_c = st.columns([1, 2])
 
@@ -427,27 +432,27 @@ else:
                 opacity=0.55, showlegend=True,
             ), row=1, col=1)
 
-        # Trajetória de 2026 (observada)
-        s26 = hist_ok[hist_ok["ano"] == ANO_CORRENTE].sort_values("decendio")
+        # Trajetória do ano atual (observada)
+        s26 = hist_ok[hist_ok["ano"] == ANO_ATUAL].sort_values("decendio")
         if not s26.empty:
             fig_c.add_trace(go.Scatter(
                 x=s26["decendio"], y=s26["prec_media"],
-                mode="lines+markers", name=f"{ANO_CORRENTE} (atual)",
+                mode="lines+markers", name=f"{ANO_ATUAL} (atual)",
                 line=dict(color="#d1495b", width=3),
             ), row=1, col=1)
 
         # Linha vertical "agora"
         fig_c.add_vline(
-            x=dec_obs_max, line_dash="dash",
+            x=ultimo_dec_obs, line_dash="dash",
             line_color="#d1495b", line_width=1.5,
             annotation_text="Agora", annotation_position="top",
             row=1, col=1,
         )
 
         # Projeção análogos — Tmin
-        if decendios_fut:
-            proj = projecao_dos_analogos(df_clima_mun, anos_analogos, decendios_fut)
-            hist_tmin = historico_climatologico(df_clima_mun, decendios_fut)
+        if decendios_fut_reais:
+            proj = projecao_dos_analogos(df_clima_mun, anos_analogos, decendios_fut_reais)
+            hist_tmin = historico_climatologico(df_clima_mun, decendios_fut_reais)
             if not proj.empty:
                 fig_c.add_trace(go.Scatter(
                     x=list(proj["decendio"]) + list(proj["decendio"])[::-1],
@@ -487,7 +492,7 @@ st.markdown("---")
 # ────────────────────────────────────────────────────────────────────────────
 # PAINEL D — Nível 4: Validação produtiva
 # ────────────────────────────────────────────────────────────────────────────
-st.markdown(f"## 🌾 Painel D — Impacto produtivo em {cultura_sel}")
+st.markdown(f"## 🌾 Painel D — Impacto produtivo em {cultura_sel} ({ANO_ATUAL})")
 st.caption(
     "Cruzamento entre as fases ENSO históricas e o rendimento real registrado. "
     "Dados: IBGE/PAM (Produção Agrícola Municipal)."
@@ -606,7 +611,7 @@ else:
                 )
 
     # ── D.2 Projeção pelos análogos ──────────────────────────────────────────
-    st.markdown(f"### D.2 Projeção de {cultura_sel} em {ANO_CORRENTE} pelos análogos")
+    st.markdown(f"### D.2 Projeção de {cultura_sel} em {ANO_ATUAL} pelos análogos")
 
     if not df_analogos.empty:
         anos_ana = df_analogos["ano"].tolist()
@@ -632,7 +637,7 @@ else:
                     Projeção baseada em {n_anos_c} ano(s) análogo(s) com dados de {cultura_sel}
                   </div>
                   <div style="font-size:1.5rem;font-weight:700;font-family:'Lora',serif;margin-bottom:0.4rem">
-                    Nos anos análogos a {ANO_CORRENTE}, <b>{cultura_sel}</b> em <b>{municipio_sel}</b>
+                    Nos anos análogos a {ANO_ATUAL}, <b>{cultura_sel}</b> em <b>{municipio_sel}</b>
                     rendeu em média <b>{media_ana:,.0f} kg/ha</b>
                   </div>
                   <div style="font-size:1rem;opacity:0.9">
