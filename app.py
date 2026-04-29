@@ -27,7 +27,10 @@ else:
     total_acessos = get_count()
 
 # ── Painel Admin (sidebar) ─────────────────────────────────────────────────
-ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", "")
+try:
+    ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD", "")
+except (FileNotFoundError, st.errors.StreamlitSecretNotFoundError):
+    ADMIN_PASSWORD = ""
 
 with st.sidebar:
     st.markdown("---")
@@ -96,20 +99,62 @@ with col1:
 with col2:
     st.markdown(
         """
-        <div style="background:#f9f7f2;border:1px dashed #c0d4c8;border-radius:16px;
-                    padding:1.5rem;opacity:0.7">
-          <div style="font-size:2rem;margin-bottom:0.5rem">🔬</div>
-          <h4 style="color:#4a6352;margin:0 0 0.3rem 0;font-family:'Lora',serif">
-            Mais Módulos — Em Breve
-          </h4>
-          <ul style="color:#4a6352;font-size:0.9rem;padding-left:1.2rem;margin:0.5rem 0 0 0">
-            <li>Gêmeos Climáticos (Machine Learning)</li>
-            <li>Resiliência ENSO / El Niño</li>
-            <li>Expansão e Yield Gap</li>
-          </ul>
+        <div style="background:#fff;border:1px solid #d0e4d8;border-radius:16px;
+                    padding:1.5rem;box-shadow:0 2px 12px rgba(27,67,50,0.10)">
+          <div style="font-size:2.5rem;margin-bottom:0.5rem">🌍</div>
+          <h3 style="color:#1b4332;margin:0 0 0.4rem 0;font-family:'Lora',serif">
+            Gêmeos Climáticos
+          </h3>
+          <p style="color:#4a6352;margin:0 0 1rem 0;font-size:0.95rem">
+            Identifique municípios brasileiros com <strong>clima análogo</strong>
+            ao de uma referência. Descubra novas regiões e janelas de plantio
+            por similaridade climática — abre fronteiras de diversificação.
+          </p>
+          <span style="background:#2d6a4f;color:#fff;padding:3px 12px;
+                       border-radius:99px;font-size:0.8rem;font-weight:600">
+            ✅ Disponível
+          </span>
         </div>
         """,
         unsafe_allow_html=True,
+    )
+    st.page_link(
+        "pages/2_🌍_Gemeos_Climaticos.py",
+        label="Abrir módulo →",
+        icon="🌍",
+    )
+
+st.markdown("---")
+st.subheader("Análise Climática Avançada")
+
+col3, col4 = st.columns([3, 2])
+
+with col3:
+    st.markdown(
+        """
+        <div style="background:#fff;border:1px solid #d0e4d8;border-radius:16px;
+                    padding:1.5rem;box-shadow:0 2px 12px rgba(27,67,50,0.10)">
+          <div style="font-size:2.5rem;margin-bottom:0.5rem">🌊</div>
+          <h3 style="color:#1b4332;margin:0 0 0.4rem 0;font-family:'Lora',serif">
+            Resiliência ENSO
+          </h3>
+          <p style="color:#4a6352;margin:0 0 1rem 0;font-size:0.95rem">
+            Análise probabilística do impacto de <strong>El Niño, La Niña e Neutro</strong>
+            sobre eventos climáticos críticos e rendimento produtivo real.
+            Motor de análogos históricos para projetar o ano corrente.
+          </p>
+          <span style="background:#2d6a4f;color:#fff;padding:3px 12px;
+                       border-radius:99px;font-size:0.8rem;font-weight:600">
+            ✅ Disponível
+          </span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.page_link(
+        "pages/3_🌍_Resiliencia_ENSO.py",
+        label="Abrir módulo →",
+        icon="🌊",
     )
 
 # ── Rodapé ────────────────────────────────────────────────────────────────
