@@ -234,6 +234,138 @@ with col4:
         help="p < 0,05 = tendência estatisticamente significativa.",
     )
 
-# ── Visualizações (em construção) ──────────────────────────────────────────
+# ── Função: gráfico "Foco em um mês" ──────────────────────────────────────
+
+def construir_grafico_foco_mensal(
+    df_foco: pd.DataFrame,
+    variavel: str,
+    mes_foco: int,
+    mostrar_enso: bool,
+    mostrar_tendencia: bool,
+    nome_escopo: str,
+    intervalo_anos: tuple[int, int],
+) -> go.Figure:
+    """Barras (chuva) ou linha+pontos (temperatura) com tendência e cores ENSO."""
+    fig = go.Figure()
+    is_chuva = eh_chuva(variavel)
+    unidade = "mm" if is_chuva else "°C"
+    nome_mes = MESES_NOMES[mes_foco]
+
+    cores = (
+        df_foco["enso_fenomeno"].map(COR_ENSO).fillna("#8d99ae").tolist()
+        if mostrar_enso
+        else ["#2d6a4f"] * len(df_foco)
+    )
+
+    if is_chuva:
+        fig.add_trace(go.Bar(
+            x=df_foco["ano"],
+            y=df_foco["valor"],
+            marker_color=cores,
+            name=nome_mes,
+            customdata=df_foco["enso_fenomeno"].fillna("—"),
+            hovertemplate=(
+                "<b>%{x}</b><br>"
+                f"Acumulado de {nome_mes}: %{{y:.0f}} mm<br>"
+                "ENSO: %{customdata}<extra></extra>"
+            ),
+        ))
+    else:
+        fig.add_trace(go.Scatter(
+            x=df_foco["ano"],
+            y=df_foco["valor"],
+            mode="lines+markers",
+            line=dict(color="#8d99ae", width=2),
+            marker=dict(size=10, color=cores, line=dict(color="white", width=1.5)),
+            name=nome_mes,
+            customdata=df_foco["enso_fenomeno"].fillna("—"),
+            hovertemplate=(
+                "<b>%{x}</b><br>"
+                f"{nome_mes} (média): %{{y:.1f}}°C<br>"
+                "ENSO: %{customdata}<extra></extra>"
+            ),
+        ))
+
+    # Linha de tendência
+    if mostrar_tendencia and len(df_foco) >= 5:
+        x = df_foco["ano"].values
+        y = df_foco["valor"].values
+        slope_f, intercept_f, _, p_f, _ = stats.linregress(x, y)
+        x_line = np.array([x.min(), x.max()])
+        y_line = slope_f * x_line + intercept_f
+        sig = "significativa" if p_f < 0.05 else "não significativa"
+        fig.add_trace(go.Scatter(
+            x=x_line,
+            y=y_line,
+            mode="lines",
+            line=dict(color="#1b4332", width=2.5, dash="dash"),
+            name=f"Tendência: {slope_f:+.2f} {unidade}/ano · p={p_f:.3f} ({sig})",
+            hoverinfo="skip",
+        ))
+
+    # Linha de média horizontal
+    media = df_foco["valor"].mean()
+    fig.add_hline(
+        y=media,
+        line_dash="dot",
+        line_color="#666",
+        annotation_text=f"Média do período: {media:.1f} {unidade}",
+        annotation_position="top right",
+    )
+
+    # Entradas de legenda ENSO
+    if mostrar_enso:
+        for fase in ["El Niño", "La Niña", "Neutro"]:
+            fig.add_trace(go.Scatter(
+                x=[None], y=[None],
+                mode="markers",
+                marker=dict(size=12, color=COR_ENSO[fase]),
+                name=fase,
+                showlegend=True,
+            ))
+
+    fig.update_layout(
+        title=f"{nome_mes} em {nome_escopo}  ({intervalo_anos[0]}–{intervalo_anos[1]})",
+        xaxis_title="Ano",
+        yaxis_title=ROTULOS_VARS[variavel],
+        height=460,
+        margin=dict(t=60, b=50, l=70, r=20),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+        hovermode="x unified",
+        plot_bgcolor="rgba(0,0,0,0)",
+    )
+    return fig
+
+
+# ── Visualização principal: Foco em um mês ─────────────────────────────────
 st.markdown("---")
-st.info("📊 Visualizações em construção — próximo commit.")
+st.markdown("### 🎯 Foco em um mês — evolução ao longo dos anos")
+st.caption(
+    "Selecione um mês para ver como ele se comportou em cada ano. "
+    "Esta é a visualização que melhor revela tendências: se janeiro está "
+    "esquentando, você verá os pontos subindo da esquerda para a direita."
+)
+
+mes_foco = st.selectbox(
+    "Mês",
+    list(MESES_NOMES.keys()),
+    format_func=lambda m: MESES_NOMES[m],
+    index=0,
+    key="tc_mes_foco",
+)
+
+df_foco = df_mensal[df_mensal["mes"] == mes_foco].sort_values("ano")
+
+if df_foco.empty:
+    st.info("Sem dados para este mês no escopo selecionado.")
+else:
+    fig_foco = construir_grafico_foco_mensal(
+        df_foco, variavel, mes_foco,
+        mostrar_enso, mostrar_tendencia,
+        nome_escopo, intervalo_anos,
+    )
+    st.plotly_chart(fig_foco, use_container_width=True)
+
+# ── Abas complementares (em construção) ────────────────────────────────────
+st.markdown("---")
+st.info("📊 Abas complementares em construção — próximo commit.")
