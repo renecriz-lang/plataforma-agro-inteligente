@@ -1,6 +1,8 @@
 """
-Comparador de Cenários Climáticos — compare múltiplos perfis históricos
-(intervalo de anos × fase ENSO × intensidade) em um único gráfico decendial.
+Comparador de Cenários Climáticos — Modo Ano Civil + Modo Safra Customizada.
+
+Permite criar até 6 perfis (faixa ou pontual) e compará-los em gráficos
+decendiais e mensais. Suporta safras que cruzam a virada do ano.
 """
 
 import os
@@ -17,9 +19,18 @@ sys.path.insert(0, os.path.join(_HERE, ".."))
 
 from utils.design import inject_css, hero_banner
 from utils.data_loader import load_base, carregar_base_clima_compacta
-from utils.resiliencia_enso import agregar_perfil_decendial
+from utils.resiliencia_enso import (
+    agregar_perfil_decendial,
+    decendios_da_safra,
+    safras_disponiveis,
+    agregar_perfil_safra_faixa,
+    agregar_perfil_safra_unica,
+    rotulos_eixo_safra,
+    agregar_mensal_de_safra,
+    MESES_NOMES_CURTOS,
+)
 
-# ── Configuração ─────────────────────────────────────────────────────────────
+# ── Configuração ──────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Comparador de Cenários Climáticos",
     page_icon="📈",
@@ -30,7 +41,7 @@ hero_banner(
     title="Comparador de Cenários Climáticos",
     subtitle=(
         "Compare múltiplos perfis históricos "
-        "(intervalo de anos × fase ENSO × intensidade) em um único gráfico decendial"
+        "(intervalo de anos/safras × fase ENSO × intensidade) em gráficos decendiais e mensais"
     ),
     icon="📈",
 )
@@ -39,39 +50,23 @@ hero_banner(
 PALETA_PERFIS = ["#2d6a4f", "#d1495b", "#2e86ab", "#c9963a", "#7d4f9e", "#3a7d44"]
 
 VARIAVEIS = {
-    "prec_media":  "🌧️ Chuva acumulada por decêndio (mm)",
-    "tmax_media":  "🌡️ Temperatura máxima média (°C)",
-    "tmed_media":  "🌡️ Temperatura média (°C)",
-    "tmin_media":  "🌡️ Temperatura mínima média (°C)",
+    "prec_media": "🌧️ Chuva acumulada por decêndio (mm)",
+    "tmax_media": "🌡️ Temperatura máxima média (°C)",
+    "tmed_media": "🌡️ Temperatura média (°C)",
+    "tmin_media": "🌡️ Temperatura mínima média (°C)",
 }
-ROTULOS_VAR = {
+ROTULO_VARIAVEIS = {
     "prec_media": "Precipitação (mm/decêndio)",
     "tmax_media": "Tmax média (°C)",
     "tmed_media": "Tméd média (°C)",
     "tmin_media": "Tmin média (°C)",
 }
 
-# Chuva = fluxo acumulável → barras; temperatura = estado contínuo → linhas
-VARIAVEIS_FLUXO  = {"prec_media"}
-VARIAVEIS_ESTADO = {"tmax_media", "tmed_media", "tmin_media"}
+VARIAVEIS_FLUXO = {"prec_media"}
+
 
 def eh_variavel_de_fluxo(v: str) -> bool:
     return v in VARIAVEIS_FLUXO
-
-# Divisão em semestres
-DECENDIOS_S1 = list(range(1, 19))   # Jan a Jun
-DECENDIOS_S2 = list(range(19, 37))  # Jul a Dez
-
-MESES_S1 = {1: "Jan-1", 4: "Fev-1", 7: "Mar-1", 10: "Abr-1", 13: "Mai-1", 16: "Jun-1"}
-MESES_S2 = {19: "Jul-1", 22: "Ago-1", 25: "Set-1", 28: "Out-1", 31: "Nov-1", 34: "Dez-1"}
-
-PERFIS_DEFAULT = [
-    {"nome": "Média geral 2010–2025", "anos": (2010, 2025), "fases": [],        "intensidades": []},
-    {"nome": "Anos La Niña",          "anos": (2000, 2025), "fases": ["La Niña"], "intensidades": []},
-    {"nome": "Anos El Niño",          "anos": (2000, 2025), "fases": ["El Niño"], "intensidades": []},
-]
-
-ANO_MIN, ANO_MAX = 2000, 2025
 
 
 def _hex_to_rgba(hex_color: str, alpha: float) -> str:
@@ -80,11 +75,38 @@ def _hex_to_rgba(hex_color: str, alpha: float) -> str:
     return f"rgba({r},{g},{b},{alpha})"
 
 
-# ── Inicializa session_state ──────────────────────────────────────────────────
-if "perfis" not in st.session_state:
-    st.session_state["perfis"] = [p.copy() for p in PERFIS_DEFAULT]
+ANO_MIN, ANO_MAX = 2000, 2025
 
-# ── Bases de dados ────────────────────────────────────────────────────────────
+MESES = [
+    "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+    "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+]
+
+PERFIS_DEFAULT_CIVIL: list[dict] = [
+    {"nome": "Média geral 2010–2025", "tipo": "faixa",
+     "anos": (2010, 2025), "fases": [], "intensidades": []},
+    {"nome": "Anos La Niña", "tipo": "faixa",
+     "anos": (2000, 2025), "fases": ["La Niña"], "intensidades": []},
+    {"nome": "Anos El Niño", "tipo": "faixa",
+     "anos": (2000, 2025), "fases": ["El Niño"], "intensidades": []},
+]
+
+PERFIS_DEFAULT_SAFRA: list[dict] = [
+    {"nome": "Média geral", "tipo": "faixa_safra",
+     "safras_range": None, "fases": [], "intensidades": []},
+    {"nome": "Safras La Niña", "tipo": "faixa_safra",
+     "safras_range": None, "fases": ["La Niña"], "intensidades": []},
+    {"nome": "Safras El Niño", "tipo": "faixa_safra",
+     "safras_range": None, "fases": ["El Niño"], "intensidades": []},
+]
+
+# ── Session state ─────────────────────────────────────────────────────────────
+if "perfis" not in st.session_state:
+    st.session_state["perfis"] = [p.copy() for p in PERFIS_DEFAULT_CIVIL]
+if "ultimo_modo" not in st.session_state:
+    st.session_state["ultimo_modo"] = "Ano civil (Jan → Dez)"
+
+# ── Referência ────────────────────────────────────────────────────────────────
 df_ref = load_base("media_geral")
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -97,7 +119,6 @@ with st.sidebar:
         "Estado (UF)", estados,
         index=estados.index("PR") if "PR" in estados else 0,
     )
-
     muns = df_ref[df_ref["estado"] == estado_sel].sort_values("nome")["nome"].tolist()
     municipio_sel = st.selectbox("Município", muns)
 
@@ -107,12 +128,16 @@ with st.sidebar:
         list(VARIAVEIS.keys()),
         format_func=lambda k: VARIAVEIS[k],
     )
-
     st.markdown("---")
     mostrar_faixa = st.toggle("Mostrar faixa p10–p90", value=True)
 
     if st.button("↺ Resetar perfis padrão"):
-        st.session_state["perfis"] = [p.copy() for p in PERFIS_DEFAULT]
+        current_mode = st.session_state.get("modo_temporal", "Ano civil (Jan → Dez)")
+        st.session_state["perfis"] = (
+            [p.copy() for p in PERFIS_DEFAULT_CIVIL]
+            if current_mode == "Ano civil (Jan → Dez)"
+            else [p.copy() for p in PERFIS_DEFAULT_SAFRA]
+        )
         st.rerun()
 
 # ── Município → código IBGE ───────────────────────────────────────────────────
@@ -121,306 +146,240 @@ if row_mun.empty:
     st.warning(f"Município '{municipio_sel}' não encontrado.")
     st.stop()
 codigo_ibge = str(row_mun["codigo_ibge"].iloc[0])
+nome_municipio = municipio_sel
+uf = estado_sel
 
-# ── Carrega base climática completa ──────────────────────────────────────────
+# ── Base climática ────────────────────────────────────────────────────────────
 with st.spinner("Carregando base climática histórica…"):
     df_clima = carregar_base_clima_compacta()
-
 df_clima_mun = df_clima[df_clima["codigo_ibge"].astype(str) == codigo_ibge].copy()
-
 if len(df_clima_mun) == 0:
     st.warning(f"Sem dados climáticos para '{municipio_sel}'.")
     st.stop()
 
-# ── Bloco de gestão de perfis ─────────────────────────────────────────────────
+# ── Modo de análise temporal ──────────────────────────────────────────────────
+st.markdown("### Modo de análise temporal")
+col_modo, _ = st.columns([3, 1])
+with col_modo:
+    modo_temporal = st.radio(
+        "Como apresentar os dados ao longo do tempo?",
+        options=["Ano civil (Jan → Dez)", "Safra (customizada)"],
+        horizontal=True,
+        key="modo_temporal",
+        help=(
+            "Ano civil: cada bloco temporal vai de janeiro a dezembro. "
+            "Safra: você define o mês de início e fim — pode atravessar a "
+            "virada do ano (ex.: out → mar)."
+        ),
+    )
+
+if modo_temporal == "Safra (customizada)":
+    col_a, col_b, col_c = st.columns([2, 2, 3])
+    with col_a:
+        mes_ini_nome = st.selectbox(
+            "Mês de início", MESES, index=9, key="mes_ini_safra",
+        )
+    with col_b:
+        n_meses = st.number_input(
+            "Duração (meses)",
+            min_value=1, max_value=12, value=6, step=1,
+            key="n_meses_safra",
+            help="Quantos meses dura a safra a partir do mês de início.",
+        )
+    with col_c:
+        mes_ini_idx = MESES.index(mes_ini_nome) + 1
+        mes_fim_idx_bruto = mes_ini_idx + int(n_meses) - 1
+        cruza_ano = mes_fim_idx_bruto > 12
+        mes_fim_idx = mes_fim_idx_bruto if not cruza_ano else mes_fim_idx_bruto - 12
+        mes_fim_nome = MESES[mes_fim_idx - 1]
+        st.metric(
+            "Janela da safra",
+            f"{mes_ini_nome} → {mes_fim_nome}",
+            help=f"{int(n_meses)} meses · {int(n_meses) * 3} decêndios",
+        )
+        if cruza_ano:
+            st.caption(
+                f"⚙️ A safra cruza a virada do ano. "
+                f"Rótulo de exemplo: **2015/16** = {mes_ini_nome} de 2015 → "
+                f"{mes_fim_nome} de 2016."
+            )
+else:
+    mes_ini_idx, mes_fim_idx, cruza_ano, n_meses = 1, 12, False, 12
+
+st.session_state["mes_ini_idx"] = mes_ini_idx
+st.session_state["mes_fim_idx"] = mes_fim_idx
+st.session_state["cruza_ano"]   = cruza_ano
+st.session_state["n_meses"]     = int(n_meses)
+
+# Reseta perfis ao trocar modo
+if st.session_state["ultimo_modo"] != modo_temporal:
+    st.session_state["perfis"] = (
+        [p.copy() for p in PERFIS_DEFAULT_CIVIL]
+        if modo_temporal == "Ano civil (Jan → Dez)"
+        else [p.copy() for p in PERFIS_DEFAULT_SAFRA]
+    )
+    st.session_state["ultimo_modo"] = modo_temporal
+
+st.divider()
+
+# ── Editor de perfis ──────────────────────────────────────────────────────────
 st.markdown("### 🎯 Perfis de comparação")
 st.caption(
-    "Cada perfil filtra o histórico por intervalo de anos, fase e intensidade ENSO. "
-    "De 2 a 6 perfis ativos. A faixa p10–p90 mostra a variabilidade interanual."
+    "Cada perfil define um subconjunto do histórico climático para comparação. "
+    "De 2 a 6 perfis ativos."
 )
+
+safras_all = safras_disponiveis(ANO_MIN, ANO_MAX, mes_ini_idx, mes_fim_idx, cruza_ano)
+rotulos_safras = [s[0] for s in safras_all]
 
 n_perfis = len(st.session_state["perfis"])
 for i in range(n_perfis):
     perfil = st.session_state["perfis"][i]
-    expanded = i == n_perfis - 1
+    with st.expander(f"🎯 {perfil['nome']}", expanded=(i == n_perfis - 1)):
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            novo_nome = st.text_input(
+                "Nome do perfil", perfil["nome"], key=f"nome_{i}"
+            )
 
-    with st.expander(f"🎯 {perfil['nome']}", expanded=expanded):
-        col_cfg, col_rm = st.columns([5, 1])
+            if modo_temporal == "Ano civil (Jan → Dez)":
+                tipo_label = st.radio(
+                    "Tipo",
+                    ["Faixa de anos (média + faixa de incerteza)", "Ano único"],
+                    horizontal=True, key=f"tipo_{i}",
+                    index=0 if perfil.get("tipo", "faixa") == "faixa" else 1,
+                )
+                if tipo_label.startswith("Faixa"):
+                    anos = st.slider(
+                        "Intervalo de anos", ANO_MIN, ANO_MAX,
+                        value=tuple(perfil.get("anos", (2010, 2025))),
+                        key=f"anos_{i}",
+                    )
+                    fases = st.multiselect(
+                        "Fase(s) ENSO (vazio = todas)",
+                        ["El Niño", "La Niña", "Neutro"],
+                        default=perfil.get("fases", []),
+                        key=f"fases_{i}",
+                    )
+                    intensidades = st.multiselect(
+                        "Intensidade(s) (vazio = todas; ignorada para Neutro)",
+                        ["Fraca", "Moderada", "Forte", "Muito Forte"],
+                        default=perfil.get("intensidades", []),
+                        key=f"int_{i}",
+                        disabled=(fases == ["Neutro"]),
+                    )
+                    st.session_state["perfis"][i] = {
+                        "nome": novo_nome, "tipo": "faixa",
+                        "anos": tuple(anos), "fases": fases,
+                        "intensidades": intensidades,
+                    }
+                else:
+                    anos_lista = list(range(ANO_MIN, ANO_MAX + 1))
+                    idx_default = (
+                        anos_lista.index(perfil["ano"])
+                        if "ano" in perfil and perfil["ano"] in anos_lista
+                        else len(anos_lista) - 1
+                    )
+                    ano_unico = st.selectbox(
+                        "Ano", anos_lista, index=idx_default, key=f"ano_unico_{i}",
+                    )
+                    st.session_state["perfis"][i] = {
+                        "nome": novo_nome, "tipo": "unico_civil", "ano": ano_unico,
+                    }
 
-        with col_cfg:
-            r1, r2 = st.columns(2)
-            with r1:
-                novo_nome = st.text_input("Nome do perfil", perfil["nome"], key=f"nome_{i}")
-            with r2:
-                anos = st.slider(
-                    "Intervalo de anos", ANO_MIN, ANO_MAX,
-                    value=tuple(perfil["anos"]), key=f"anos_{i}",
+            else:  # Modo Safra
+                tipo_label = st.radio(
+                    "Tipo",
+                    ["Faixa de safras (média + faixa de incerteza)", "Safra única"],
+                    horizontal=True, key=f"tipo_{i}",
+                    index=0 if perfil.get("tipo", "faixa_safra") == "faixa_safra" else 1,
                 )
 
-            r3, r4 = st.columns(2)
-            with r3:
-                fases = st.multiselect(
-                    "Fase(s) ENSO (vazio = todas)",
-                    ["El Niño", "La Niña", "Neutro"],
-                    default=perfil["fases"], key=f"fases_{i}",
-                )
-            with r4:
-                apenas_neutro = fases == ["Neutro"]
-                intensidades = st.multiselect(
-                    "Intensidade(s) (vazio = todas)",
-                    ["Fraca", "Moderada", "Forte", "Muito Forte"],
-                    default=[] if apenas_neutro else perfil["intensidades"],
-                    key=f"int_{i}",
-                    disabled=apenas_neutro,
-                    help="Ignorada quando apenas 'Neutro' está selecionado.",
-                )
+                if tipo_label.startswith("Faixa"):
+                    sr = perfil.get("safras_range")
+                    default_range = (
+                        tuple(sr)
+                        if sr and sr[0] in rotulos_safras and sr[1] in rotulos_safras
+                        else (rotulos_safras[0], rotulos_safras[-1])
+                    )
+                    intervalo = st.select_slider(
+                        "Intervalo de safras",
+                        options=rotulos_safras,
+                        value=default_range,
+                        key=f"safras_range_{i}",
+                    )
+                    fases = st.multiselect(
+                        "Fase(s) ENSO predominante na safra (vazio = todas)",
+                        ["El Niño", "La Niña", "Neutro"],
+                        default=perfil.get("fases", []),
+                        key=f"fases_{i}",
+                    )
+                    intensidades = st.multiselect(
+                        "Intensidade(s) ENSO (vazio = todas)",
+                        ["Fraca", "Moderada", "Forte", "Muito Forte"],
+                        default=perfil.get("intensidades", []),
+                        key=f"int_{i}",
+                        disabled=(fases == ["Neutro"]),
+                    )
+                    st.session_state["perfis"][i] = {
+                        "nome": novo_nome, "tipo": "faixa_safra",
+                        "safras_range": intervalo,
+                        "fases": fases, "intensidades": intensidades,
+                    }
+                else:
+                    default_safra = (
+                        perfil["safra"]
+                        if perfil.get("safra") in rotulos_safras
+                        else rotulos_safras[-1]
+                    )
+                    safra_escolhida = st.selectbox(
+                        "Safra", rotulos_safras,
+                        index=rotulos_safras.index(default_safra),
+                        key=f"safra_unica_{i}",
+                    )
+                    st.session_state["perfis"][i] = {
+                        "nome": novo_nome, "tipo": "unica_safra",
+                        "safra": safra_escolhida,
+                    }
 
-        with col_rm:
+        with col2:
             st.markdown(" ")
             st.markdown(" ")
-            if st.button("🗑️", key=f"rm_{i}",
-                         disabled=len(st.session_state["perfis"]) <= 2,
-                         help="Remover perfil (mínimo: 2)"):
+            if st.button(
+                "🗑️ Remover", key=f"rm_{i}",
+                disabled=len(st.session_state["perfis"]) <= 2,
+                help="Remover perfil (mínimo: 2)",
+            ):
                 st.session_state["perfis"].pop(i)
                 st.rerun()
 
-        st.session_state["perfis"][i] = {
-            "nome": novo_nome,
-            "anos": tuple(anos),
-            "fases": fases,
-            "intensidades": intensidades,
-        }
-
 # ── Botão adicionar perfil ────────────────────────────────────────────────────
-btn_col, cap_col = st.columns([1, 4])
-with btn_col:
+col_btn, col_cap = st.columns([1, 4])
+with col_btn:
     if st.button(
         "➕ Adicionar perfil",
         disabled=len(st.session_state["perfis"]) >= 6,
         help="Máximo de 6 perfis",
     ):
-        st.session_state["perfis"].append({
-            "nome": f"Perfil {len(st.session_state['perfis']) + 1}",
-            "anos": (2010, 2025),
-            "fases": [],
-            "intensidades": [],
-        })
+        if modo_temporal == "Ano civil (Jan → Dez)":
+            novo: dict = {
+                "nome": f"Perfil {len(st.session_state['perfis'])+1}",
+                "tipo": "faixa", "anos": (2010, 2025),
+                "fases": [], "intensidades": [],
+            }
+        else:
+            novo = {
+                "nome": f"Perfil {len(st.session_state['perfis'])+1}",
+                "tipo": "faixa_safra", "safras_range": None,
+                "fases": [], "intensidades": [],
+            }
+        st.session_state["perfis"].append(novo)
         st.rerun()
-with cap_col:
+with col_cap:
     st.caption(f"{len(st.session_state['perfis'])} de 6 perfis ativos")
 
 st.markdown("---")
-
-# ── Gráfico de comparação ─────────────────────────────────────────────────────
-st.markdown(f"### 📊 {VARIAVEIS[variavel_key]} — {municipio_sel}/{estado_sel}")
-
-modo_barras = eh_variavel_de_fluxo(variavel_key)
-
-# Aviso quando muitos perfis em modo barras com faixa
-if modo_barras and mostrar_faixa and len(st.session_state["perfis"]) > 3:
-    st.info(
-        "💡 Com mais de 3 perfis, sugerimos desativar **Mostrar faixa p10–p90** "
-        "para o gráfico de barras ficar mais legível."
-    )
-
-fig = make_subplots(
-    rows=2, cols=1,
-    row_heights=[0.5, 0.5],
-    vertical_spacing=0.16,
-    subplot_titles=("1º semestre — Jan a Jun", "2º semestre — Jul a Dez"),
-    shared_yaxes=True,
-)
-
-resumo_rows = []
-
-_HOVER = (
-    "<b>%{fullData.name}</b><br>"
-    "Decêndio %{x}<br>"
-    "Média: %{y:.1f}<br>"
-    "Mediana: %{customdata[2]:.1f}<br>"
-    "p10–p90: %{customdata[1]:.1f} – %{customdata[3]:.1f}<br>"
-    "n=%{customdata[0]} anos<extra></extra>"
-)
-
-for i, perfil in enumerate(st.session_state["perfis"]):
-    df_agg = agregar_perfil_decendial(
-        df_clima_mun,
-        anos=perfil["anos"],
-        fases=perfil["fases"],
-        intensidades=perfil["intensidades"],
-        variavel=variavel_key,
-    )
-
-    if df_agg.empty:
-        st.warning(f"⚠️ Perfil **{perfil['nome']}**: sem dados para os filtros selecionados.")
-        continue
-
-    cor = PALETA_PERFIS[i % len(PALETA_PERFIS)]
-    n_min = int(df_agg["n_anos"].min())
-    nome_legenda = perfil["nome"] + (" ⚠️" if n_min < 3 else "")
-
-    for row, decs_alvo in [(1, DECENDIOS_S1), (2, DECENDIOS_S2)]:
-        sub = df_agg[df_agg["decendio"].isin(decs_alvo)]
-        if sub.empty:
-            continue
-
-        cd = sub[["n_anos", "p10", "p50", "p90"]].values
-        show_leg = (row == 1)
-
-        if modo_barras:
-            error_y = None
-            if mostrar_faixa:
-                error_y = dict(
-                    type="data",
-                    symmetric=False,
-                    array=(sub["p90"] - sub["media"]).values,
-                    arrayminus=(sub["media"] - sub["p10"]).values,
-                    color=_hex_to_rgba(cor, 0.55),
-                    thickness=1.2,
-                    width=3,
-                )
-            fig.add_trace(
-                go.Bar(
-                    x=sub["decendio"], y=sub["media"],
-                    name=nome_legenda,
-                    marker_color=cor,
-                    error_y=error_y,
-                    legendgroup=nome_legenda,
-                    showlegend=show_leg,
-                    customdata=cd,
-                    hovertemplate=_HOVER,
-                ),
-                row=row, col=1,
-            )
-        else:
-            # Faixa p10-p90 (linhas)
-            if mostrar_faixa:
-                fig.add_trace(
-                    go.Scatter(
-                        x=sub["decendio"], y=sub["p90"],
-                        mode="lines", line=dict(width=0),
-                        showlegend=False, hoverinfo="skip",
-                        legendgroup=nome_legenda,
-                    ),
-                    row=row, col=1,
-                )
-                fig.add_trace(
-                    go.Scatter(
-                        x=sub["decendio"], y=sub["p10"],
-                        mode="lines", line=dict(width=0),
-                        fill="tonexty", fillcolor=_hex_to_rgba(cor, 0.15),
-                        showlegend=False, hoverinfo="skip",
-                        legendgroup=nome_legenda,
-                    ),
-                    row=row, col=1,
-                )
-            fig.add_trace(
-                go.Scatter(
-                    x=sub["decendio"], y=sub["media"],
-                    mode="lines+markers",
-                    name=nome_legenda,
-                    line=dict(color=cor, width=2.5),
-                    marker=dict(size=5),
-                    legendgroup=nome_legenda,
-                    showlegend=show_leg,
-                    customdata=cd,
-                    hovertemplate=_HOVER,
-                ),
-                row=row, col=1,
-            )
-
-    # Linha para tabela-resumo
-    if variavel_key == "prec_media":
-        val_resumo = f"{df_agg['media'].sum():.0f} mm/ano"
-    else:
-        val_resumo = f"{df_agg['media'].mean():.1f} °C (média anual)"
-    dec_max = int(df_agg.loc[df_agg["media"].idxmax(), "decendio"])
-    dec_min = int(df_agg.loc[df_agg["media"].idxmin(), "decendio"])
-
-    resumo_rows.append({
-        "Perfil":       perfil["nome"],
-        "Anos":         f"{perfil['anos'][0]}–{perfil['anos'][1]}",
-        "Fases":        ", ".join(perfil["fases"]) or "Todas",
-        "Intens.":      ", ".join(perfil["intensidades"]) or "Todas",
-        "n máx/dec":    int(df_agg["n_anos"].max()),
-        "Resumo anual": val_resumo,
-        "Dec. + alto":  f"D{dec_max}",
-        "Dec. + baixo": f"D{dec_min}",
-    })
-
-# Eixos
-fig.update_xaxes(
-    tickmode="array",
-    tickvals=list(MESES_S1.keys()),
-    ticktext=list(MESES_S1.values()),
-    range=[0.4, 18.6],
-    showgrid=True, gridcolor="#eee",
-    row=1, col=1,
-)
-fig.update_xaxes(
-    tickmode="array",
-    tickvals=list(MESES_S2.keys()),
-    ticktext=list(MESES_S2.values()),
-    range=[18.4, 36.6],
-    title_text="Decêndio do ano",
-    showgrid=True, gridcolor="#eee",
-    row=2, col=1,
-)
-fig.update_yaxes(
-    title_text=ROTULOS_VAR[variavel_key],
-    showgrid=True, gridcolor="#eee",
-    zeroline=False,
-    row=1, col=1,
-)
-fig.update_yaxes(
-    title_text=ROTULOS_VAR[variavel_key],
-    showgrid=True, gridcolor="#eee",
-    zeroline=False,
-    row=2, col=1,
-)
-
-fig.update_layout(
-    barmode="group" if modo_barras else "overlay",
-    bargap=0.20,
-    bargroupgap=0.05,
-    hovermode="x unified",
-    height=720,
-    margin=dict(t=70, b=50, l=70, r=20),
-    legend=dict(
-        orientation="h",
-        yanchor="bottom", y=1.04,
-        xanchor="left", x=0,
-        font=dict(size=11),
-    ),
-    plot_bgcolor="white",
-    paper_bgcolor="white",
-    font=dict(family="DM Sans"),
-)
-
-st.plotly_chart(fig, use_container_width=True)
-
-# ── Tabela-resumo ─────────────────────────────────────────────────────────────
-if resumo_rows:
-    st.markdown("### 📋 Resumo dos perfis")
-    st.dataframe(
-        pd.DataFrame(resumo_rows),
-        hide_index=True,
-        use_container_width=True,
-    )
-
-# ── Rodapé técnico ────────────────────────────────────────────────────────────
-st.markdown("---")
-with st.expander("ℹ️ Notas técnicas", expanded=False):
-    st.markdown("""
-**Metodologia:**
-
-- **Filtro de cobertura:** apenas registros com `flag_cobertura == 'OK'` são incluídos em cada perfil.
-- **Faixa p10–p90:** representa a variabilidade interanual dentro dos filtros do perfil (não é incerteza da estimativa da média).
-- **n < 3 em algum decêndio:** perfil marcado com ⚠️ na legenda — interprete com cautela.
-- **"Intensidade" ignorada para Neutro:** registros com `enso_fenomeno == 'Neutro'` não têm intensidade ENSO definida e são incluídos sempre que "Neutro" está entre as fases selecionadas.
-- **Variável "Chuva":** valor decendial = precipitação acumulada nos ~10 dias do decêndio (mm).
-- **Escala temporal:** cada decêndio representa aproximadamente 10 dias; 36 decêndios = 1 ano.
-    """)
+st.info("📊 Gráficos em construção — próximo commit.")
 
 st.markdown(
     "<div style='text-align:center;color:#8a9e8f;font-size:0.82rem;padding:0.5rem 0'>"
