@@ -396,6 +396,209 @@ def agregar_perfil_decendial(
     return out
 
 
+# ===========================================================================
+# 7b. Modo Safra customizada (Comparador de Cenários)
+# ===========================================================================
+
+MESES_NOMES_CURTOS: dict[int, str] = {
+    1: "Jan", 2: "Fev", 3: "Mar",  4: "Abr", 5: "Mai",  6: "Jun",
+    7: "Jul", 8: "Ago", 9: "Set", 10: "Out", 11: "Nov", 12: "Dez",
+}
+
+
+def decendios_da_safra(mes_ini: int, mes_fim: int) -> list[int]:
+    """Retorna decêndios (1-36) cobertos pela safra na ordem plantio→colheita.
+
+    Se mes_fim < mes_ini, a safra cruza a virada do ano.
+    Ex: mes_ini=10, mes_fim=3 → [28,29,30, 31,32,33, 34,35,36, 1,2,3, 4,5,6, 7,8,9]
+    """
+    decs: list[int] = []
+    if mes_fim >= mes_ini:
+        meses = range(mes_ini, mes_fim + 1)
+    else:
+        meses = list(range(mes_ini, 13)) + list(range(1, mes_fim + 1))
+    for m in meses:
+        decs.extend([(m - 1) * 3 + 1, (m - 1) * 3 + 2, (m - 1) * 3 + 3])
+    return decs
+
+
+def safras_disponiveis(
+    ano_min: int,
+    ano_max: int,
+    mes_ini: int,
+    mes_fim: int,
+    cruza_ano: bool,
+) -> list[tuple[str, int, int]]:
+    """Lista de safras possíveis. Cada item: (rotulo, ano_inicio, ano_fim_civil).
+
+    Safras cujo ano_fim ultrapassa ano_max são excluídas.
+    """
+    out: list[tuple[str, int, int]] = []
+    for a in range(ano_min, ano_max + 1):
+        ano_fim = a + 1 if cruza_ano else a
+        if ano_fim > ano_max:
+            continue
+        rotulo = f"{a}/{str(ano_fim)[-2:]}" if cruza_ano else str(a)
+        out.append((rotulo, a, ano_fim))
+    return out
+
+
+def _coletar_dados_safra(
+    df_clima_mun: pd.DataFrame,
+    ano_inicio: int,
+    ano_fim: int,
+    decs_safra: list[int],
+    cruza_ano: bool,
+) -> pd.DataFrame:
+    """DataFrame de uma safra com posicao_safra (1..N), decendio_civil, ano_civil
+    e todas as variáveis climáticas originais."""
+    df = df_clima_mun[df_clima_mun["flag_cobertura"] == "OK"].copy()
+
+    if not cruza_ano:
+        df = df[(df["ano"] == ano_inicio) & (df["decendio"].isin(decs_safra))]
+    else:
+        # Primeira parte no ano_inicio (decêndios com valor >= decs_safra[0])
+        n_decs_inicio = len([d for d in decs_safra if d >= decs_safra[0]])
+        decs_metade1 = decs_safra[:n_decs_inicio]
+        decs_metade2 = decs_safra[n_decs_inicio:]
+        m1 = df[(df["ano"] == ano_inicio) & (df["decendio"].isin(decs_metade1))]
+        m2 = df[(df["ano"] == ano_fim)    & (df["decendio"].isin(decs_metade2))]
+        df = pd.concat([m1, m2], ignore_index=True)
+
+    if df.empty:
+        return pd.DataFrame()
+
+    pos_map = {d: i + 1 for i, d in enumerate(decs_safra)}
+    df = df.copy()
+    df["posicao_safra"] = df["decendio"].map(pos_map)
+    df = df.rename(columns={"decendio": "decendio_civil", "ano": "ano_civil"})
+    return df.sort_values("posicao_safra").reset_index(drop=True)
+
+
+def agregar_perfil_safra_faixa(
+    df_clima_mun: pd.DataFrame,
+    safras: list[tuple[str, int, int]],
+    fases: list[str],
+    intensidades: list[str],
+    decs_safra: list[int],
+    cruza_ano: bool,
+    variavel: str,
+) -> pd.DataFrame:
+    """Agrega N safras (filtradas por ENSO predominante) em estatísticas por
+    posicao_safra. Retorna: posicao_safra | media | p10 | p50 | p90 | n_safras.
+    """
+    _VAZIO = pd.DataFrame(
+        columns=["posicao_safra", "media", "p10", "p50", "p90", "n_safras"]
+    )
+    if df_clima_mun.empty or not safras:
+        return _VAZIO
+
+    coletadas: list[pd.DataFrame] = []
+    for _, ano_ini, ano_fim in safras:
+        sub = _coletar_dados_safra(df_clima_mun, ano_ini, ano_fim,
+                                   decs_safra, cruza_ano)
+        if sub.empty:
+            continue
+        # Filtragem por ENSO predominante dentro da janela da safra
+        if fases or intensidades:
+            moda_fen = sub["enso_fenomeno"].mode()
+            fenomeno_pred = moda_fen.iloc[0] if not moda_fen.empty else None
+            moda_int = sub["enso_intensidade"].mode()
+            intens_pred = moda_int.iloc[0] if not moda_int.empty else None
+            if fases and fenomeno_pred not in fases:
+                continue
+            if (intensidades and fenomeno_pred != "Neutro"
+                    and intens_pred not in intensidades):
+                continue
+        coletadas.append(sub)
+
+    if not coletadas:
+        return _VAZIO
+
+    todas = pd.concat(coletadas, ignore_index=True)
+    out = (
+        todas.groupby("posicao_safra", as_index=False)[variavel]
+             .agg(
+                 media="mean",
+                 p10=lambda x: x.quantile(0.10),
+                 p50="median",
+                 p90=lambda x: x.quantile(0.90),
+                 n_safras="count",
+             )
+             .sort_values("posicao_safra")
+             .reset_index(drop=True)
+    )
+    return out
+
+
+def agregar_perfil_safra_unica(
+    df_clima_mun: pd.DataFrame,
+    safra: tuple[str, int, int],
+    decs_safra: list[int],
+    cruza_ano: bool,
+    variavel: str,
+) -> pd.DataFrame:
+    """Série crua de UMA safra: posicao_safra | media (=valor pontual)."""
+    _, ano_ini, ano_fim = safra
+    sub = _coletar_dados_safra(df_clima_mun, ano_ini, ano_fim,
+                               decs_safra, cruza_ano)
+    if sub.empty:
+        return pd.DataFrame(columns=["posicao_safra", "media"])
+    return (
+        sub[["posicao_safra", variavel]]
+        .rename(columns={variavel: "media"})
+        .sort_values("posicao_safra")
+        .reset_index(drop=True)
+    )
+
+
+def rotulos_eixo_safra(decs_safra: list[int]) -> list[str]:
+    """Para cada decêndio civil na ordem da safra, gera 'Mes-Dn'.
+    Ex: [28,29,30,...] → ['Out-D1','Out-D2','Out-D3',...]
+    """
+    rotulos: list[str] = []
+    for d in decs_safra:
+        mes = ((d - 1) // 3) + 1
+        n   = ((d - 1) %  3) + 1
+        rotulos.append(f"{MESES_NOMES_CURTOS[mes]}-D{n}")
+    return rotulos
+
+
+def agregar_mensal_de_safra(
+    df_decendial_safra: pd.DataFrame,
+    decs_safra: list[int],
+    modo: str,
+) -> pd.DataFrame:
+    """Agrega resultado decendial por mês na ordem da safra.
+
+    df_decendial_safra deve ter colunas 'posicao_safra' e 'media'.
+    modo: 'soma' (precipitação) ou 'media' (temperatura).
+    Retorna: posicao_mes (1..N) | mes_rotulo | valor.
+    """
+    if df_decendial_safra.empty:
+        return pd.DataFrame(columns=["posicao_mes", "mes_rotulo", "valor"])
+
+    mapa = [
+        (i + 1, (i // 3) + 1, ((d - 1) // 3) + 1)
+        for i, d in enumerate(decs_safra)
+    ]
+    df_map = pd.DataFrame(mapa, columns=["posicao_safra", "posicao_mes", "mes_civil"])
+
+    df = df_decendial_safra.merge(df_map, on="posicao_safra")
+    if modo == "soma":
+        out = df.groupby(["posicao_mes", "mes_civil"], as_index=False)["media"].sum()
+    else:
+        out = df.groupby(["posicao_mes", "mes_civil"], as_index=False)["media"].mean()
+
+    out = out.rename(columns={"media": "valor"})
+    out["mes_rotulo"] = out["mes_civil"].map(MESES_NOMES_CURTOS)
+    return (
+        out[["posicao_mes", "mes_rotulo", "valor"]]
+        .sort_values("posicao_mes")
+        .reset_index(drop=True)
+    )
+
+
 # ============================================================
 # 8. Nível 4 — Validação produtiva (NOVO)
 # ============================================================
