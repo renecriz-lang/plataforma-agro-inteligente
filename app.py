@@ -219,6 +219,40 @@ with col5:
         icon="🌱",
     )
 
+st.markdown("---")
+st.subheader("Análise de Tendências")
+
+col6, _ = st.columns([3, 2])
+
+with col6:
+    st.markdown(
+        """
+        <div style="background:#fff;border:1px solid #d0e4d8;border-radius:16px;
+                    padding:1.5rem;box-shadow:0 2px 12px rgba(27,67,50,0.10)">
+          <div style="font-size:2.5rem;margin-bottom:0.5rem">📉</div>
+          <h3 style="color:#1b4332;margin:0 0 0.4rem 0;font-family:'Lora',serif">
+            Tendências Climáticas
+          </h3>
+          <p style="color:#4a6352;margin:0 0 1rem 0;font-size:0.95rem">
+            Como o clima está <strong>mudando ao longo dos anos</strong>?
+            Heatmap calendário (ano × mês), climograma sobreposto, tendência anual
+            com faixa de confiança 95% e anomalias mensais — tudo com
+            <strong>marcação ENSO toggleable</strong>.
+          </p>
+          <span style="background:#2d6a4f;color:#fff;padding:3px 12px;
+                       border-radius:99px;font-size:0.8rem;font-weight:600">
+            ✅ Disponível
+          </span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.page_link(
+        "pages/6_📉_Tendencias_Climaticas.py",
+        label="Abrir módulo →",
+        icon="📉",
+    )
+
 # ── Rodapé ────────────────────────────────────────────────────────────────
 st.markdown("---")
 st.markdown(
