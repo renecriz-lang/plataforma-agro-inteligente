@@ -532,6 +532,254 @@ with aba_ativa:
                 st.success(f"Configuração salva em `{arq.name}`.")
                 st.session_state["mc_cultura_nome"] = nome_salvar
 
-# ── Processamento (em construção) ─────────────────────────────────────────
+# ── Processamento ─────────────────────────────────────────────────────────
+def _norm_fase(ph: dict) -> dict:
+    """Normaliza phase_inputs para o formato esperado pelo motor de simulação."""
+    def _s(v, default):
+        return v if v is not None else default
+    return dict(
+        dur=ph["dur"],
+        gdd_threshold=ph["gdd_threshold"],
+        prec_en=ph["prec_en"],
+        prec_min=_s(ph["prec_min"], 0.0),
+        prec_max=_s(ph["prec_max"], 1e9),
+        tmed_en=ph["tmed_en"],
+        tmed_min=_s(ph["tmed_min"], -99.0),
+        tmed_max=_s(ph["tmed_max"],  99.0),
+        tmax_en=ph["tmax_en"],
+        tmax_min=_s(ph["tmax_min"], -99.0),
+        tmax_max=_s(ph["tmax_max"],  99.0),
+        tmin_en=ph["tmin_en"],
+        tmin_min=_s(ph["tmin_min"], -99.0),
+        tmin_max=_s(ph["tmin_max"],  99.0),
+    )
+
+
 st.markdown("---")
-st.info("⚙️ Processamento em construção — próximo commit.")
+col_b1, col_b2 = st.columns([1, 1])
+
+with col_b1:
+    btn_processar = st.button(
+        "1. Processar Zoneamento",
+        type="primary",
+        disabled=not durations_ok or len(df_filtered) == 0,
+        key="mc_btn_processar",
+        help="Varre os 36 decêndios possíveis de plantio para cada município.",
+    )
+
+if btn_processar:
+    phases_norm = [_norm_fase(ph) for ph in phase_inputs]
+    with st.spinner("Varrendo decêndios e municípios…"):
+        if sim_mode == "Duração (Dias)":
+            cycle_days = sum(ph["dur"] for ph in phase_inputs)
+            df_result = run_zoneamento_days(df_filtered, phases_norm, cycle_days)
+        else:
+            df_result = run_zoneamento_gdd(df_filtered, phases_norm, float(tbase))
+
+    if df_result.empty:
+        st.warning(
+            "Nenhum município apto encontrado. Considere relaxar os limites climáticos."
+        )
+        st.session_state.pop("mc_result_df", None)
+    else:
+        df_result.to_parquet(TEMP_FILE, index=False)
+        st.session_state["mc_result_df"] = df_result
+        st.success(
+            f"Processamento concluído. **{len(df_result):,} municípios aptos** encontrados."
+        )
+
+has_result = "mc_result_df" in st.session_state or os.path.exists(TEMP_FILE)
+
+with col_b2:
+    btn_mapa = st.button(
+        "2. Gerar Mapa e Tabela",
+        disabled=not has_result,
+        key="mc_btn_mapa",
+        help="Exibe o mapa interativo e a tabela de municípios aptos.",
+    )
+
+if btn_mapa:
+    st.session_state["mc_show_results"] = True
+
+if st.session_state.get("mc_show_results") and has_result:
+    if "mc_result_df" in st.session_state:
+        df_res = st.session_state["mc_result_df"]
+    else:
+        df_res = pd.read_parquet(TEMP_FILE)
+
+    df_map = df_res.dropna(subset=["lat", "lon"])
+
+    st.markdown("---")
+    st.subheader("📊 Resultados do Zoneamento")
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Municípios Aptos",      f"{len(df_res):,}")
+    c2.metric("Estados Contempl.",     df_res["UF"].nunique())
+    c3.metric("Máx. Janelas / Mun.",   int(df_res["Num_Decendios_Aptos"].max()))
+    baixo_risco = (df_res["Num_Decendios_Aptos"] >= 3).mean() * 100
+    c4.metric("Baixo Risco (≥3 jan.)", f"{baixo_risco:.0f}%")
+
+    # Mapa Folium
+    st.subheader("🗺️ Mapa Interativo dos Municípios Aptos")
+
+    col_leg1, col_leg2, _ = st.columns([1, 1, 2])
+    col_leg1.markdown(
+        "<span style='background:#27ae60;color:#fff;padding:3px 10px;"
+        "border-radius:4px;font-size:13px'>● Verde — ≥3 janelas</span>",
+        unsafe_allow_html=True,
+    )
+    col_leg2.markdown(
+        "<span style='background:#e67e22;color:#fff;padding:3px 10px;"
+        "border-radius:4px;font-size:13px'>● Laranja — 1–2 janelas</span>",
+        unsafe_allow_html=True,
+    )
+
+    m = folium.Map(
+        location=[df_map["lat"].mean(), df_map["lon"].mean()],
+        zoom_start=5,
+        tiles="CartoDB positron",
+    )
+
+    for _, row in df_map.iterrows():
+        n     = int(row["Num_Decendios_Aptos"])
+        color = "#27ae60" if n >= 3 else "#e67e22"
+        r     = 5 + min(n, 12)
+
+        janelas_html = "".join(
+            f"<li style='margin:2px 0'>🗓️ {j.strip()}</li>"
+            for j in row["Janelas_Plantio"].split("|")
+        )
+        lims = row["Fatores_Limitantes"].split("|") if row["Fatores_Limitantes"] else []
+        lim_block = ""
+        if lims:
+            lim_html = "".join(
+                f"<li style='margin:2px 0;color:#c0392b'>⚠️ {p.strip()}</li>"
+                for p in lims[:2]
+            )
+            lim_block = (
+                "<hr style='margin:6px 0;border-color:#ddd'>"
+                "<b style='color:#c0392b'>Fatores Restritivos:</b>"
+                f"<ul style='margin:4px 0 0 0;padding-left:14px'>{lim_html}</ul>"
+            )
+
+        popup_html = (
+            f"<div style='font-family:Arial,sans-serif;font-size:13px;"
+            f"min-width:260px;max-width:380px;line-height:1.4'>"
+            f"<b style='font-size:14px'>📍 {row['Municipio']} / {row['UF']}</b>"
+            f"<span style='color:#555'> | ⛰️ {row['Altitude_m']} m</span><br>"
+            f"<span style='color:#666;font-size:12px'>Solo: {row['Solo_Dominante']}</span>"
+            f"<hr style='margin:6px 0;border-color:#ddd'>"
+            f"<b style='color:#27ae60'>🌱 Janelas ({n}):</b>"
+            f"<ul style='margin:4px 0 0 0;padding-left:14px'>{janelas_html}</ul>"
+            f"{lim_block}</div>"
+        )
+
+        folium.CircleMarker(
+            location=[row["lat"], row["lon"]],
+            radius=r, color=color, fill=True,
+            fill_color=color, fill_opacity=0.80, weight=1.2,
+            popup=folium.Popup(popup_html, max_width=400),
+            tooltip=f"<b>{row['Municipio']} — {row['UF']}</b><br>{n} janela(s)",
+        ).add_to(m)
+
+    st_folium(m, width="100%", height=580, returned_objects=[])
+
+    # Tabela
+    st.subheader("📋 Tabela de Municípios Aptos")
+
+    ufs   = ["Todos"] + sorted(df_res["UF"].unique().tolist())
+    cf1, cf2 = st.columns([1, 2])
+    uf_sel   = cf1.selectbox("Filtrar por UF:", ufs, key="mc_uf_sel")
+    _max_jan = max(2, int(df_res["Num_Decendios_Aptos"].max()))
+    min_jan  = cf2.slider("Mínimo de janelas:", 1, _max_jan, 1, key="mc_min_jan")
+
+    df_show = df_res.copy()
+    if uf_sel != "Todos":
+        df_show = df_show[df_show["UF"] == uf_sel]
+    df_show = df_show[df_show["Num_Decendios_Aptos"] >= min_jan]
+    df_show = df_show.sort_values(
+        ["Num_Decendios_Aptos", "Municipio"], ascending=[False, True]
+    ).reset_index(drop=True)
+
+    st.dataframe(
+        df_show[[
+            "Municipio", "UF", "Altitude_m", "Solo_Dominante",
+            "Num_Decendios_Aptos", "Janelas_Plantio", "Fatores_Limitantes",
+        ]],
+        use_container_width=True, hide_index=True,
+        column_config={
+            "Municipio":           st.column_config.TextColumn("Município"),
+            "Altitude_m":          st.column_config.NumberColumn("Altitude (m)", format="%d m"),
+            "Num_Decendios_Aptos": st.column_config.NumberColumn("Janelas Aptas", format="%d"),
+            "Janelas_Plantio":     st.column_config.TextColumn("Janelas de Plantio", width="large"),
+            "Fatores_Limitantes":  st.column_config.TextColumn("Fatores Limitantes",  width="large"),
+        },
+    )
+    st.caption(f"Exibindo **{len(df_show):,}** município(s).")
+
+    # Detalhes do município
+    if not df_show.empty:
+        st.markdown("---")
+        st.subheader("🔍 Detalhes do Município")
+
+        mun_sel = st.selectbox(
+            "Selecione um município para ver as janelas de plantio:",
+            df_show["Municipio"].tolist(),
+            key="mc_mun_detail_sel",
+        )
+
+        row_d = df_show[df_show["Municipio"] == mun_sel].iloc[0]
+        janelas = [j.strip() for j in row_d["Janelas_Plantio"].split("|") if j.strip()]
+        alt_str = f"{int(row_d['Altitude_m'])} m" if pd.notna(row_d["Altitude_m"]) else "N/D"
+
+        col_info, col_jan = st.columns([1, 2])
+
+        with col_info:
+            st.markdown(
+                f"**📍 {row_d['Municipio']} / {row_d['UF']}**  \n"
+                f"⛰️ Altitude: **{alt_str}**  \n"
+                f"🌱 Solo: **{row_d['Solo_Dominante']}**  \n"
+                f"🌿 Janelas aptas: **{int(row_d['Num_Decendios_Aptos'])}**"
+            )
+            if row_d["Fatores_Limitantes"]:
+                lims = [l.strip() for l in row_d["Fatores_Limitantes"].split("|") if l.strip()]
+                if lims:
+                    st.markdown("**⚠️ Fatores Restritivos:**")
+                    for lim in lims:
+                        st.markdown(f"- {lim}")
+
+        with col_jan:
+            st.markdown(f"**🗓️ Janelas de Plantio Aptas ({len(janelas)}):**")
+            for j in janelas:
+                st.markdown(f"&nbsp;&nbsp;&nbsp;🗓️ {j}", unsafe_allow_html=True)
+
+    # CSV download
+    csv_bytes = df_show.to_csv(index=False).encode("utf-8-sig")
+    st.download_button(
+        "⬇️  Baixar CSV",
+        data=csv_bytes,
+        file_name="zoneamento_multicultura.csv",
+        mime="text/csv",
+        key="mc_download_csv",
+    )
+
+    # Distribuição por estado
+    st.subheader("📊 Distribuição por Estado")
+    uf_agg = (
+        df_res.groupby("UF")
+        .agg(
+            Municípios=("Municipio", "count"),
+            Média_Janelas=("Num_Decendios_Aptos", "mean"),
+            Máx_Janelas=("Num_Decendios_Aptos", "max"),
+        )
+        .sort_values("Municípios", ascending=False)
+        .reset_index()
+    )
+    uf_agg["Média_Janelas"] = uf_agg["Média_Janelas"].round(1)
+    st.dataframe(
+        uf_agg, use_container_width=True, hide_index=True,
+        column_config={
+            "Média_Janelas": st.column_config.NumberColumn("Média Janelas", format="%.1f"),
+            "Máx_Janelas":   st.column_config.NumberColumn("Máx. Janelas",  format="%d"),
+        },
+    )
