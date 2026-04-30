@@ -185,6 +185,40 @@ with col4:
         icon="📈",
     )
 
+st.markdown("---")
+st.subheader("Simulação Multicultura")
+
+col5, _ = st.columns([3, 2])
+
+with col5:
+    st.markdown(
+        """
+        <div style="background:#fff;border:1px solid #d0e4d8;border-radius:16px;
+                    padding:1.5rem;box-shadow:0 2px 12px rgba(27,67,50,0.10)">
+          <div style="font-size:2.5rem;margin-bottom:0.5rem">🌱</div>
+          <h3 style="color:#1b4332;margin:0 0 0.4rem 0;font-family:'Lora',serif">
+            Aptidão Multicultura
+          </h3>
+          <p style="color:#4a6352;margin:0 0 1rem 0;font-size:0.95rem">
+            Generalize o motor de zoneamento para <strong>qualquer cultura</strong>.
+            Escolha entre 5 templates pré-configurados (cevada, soja, milho, feijão, trigo)
+            ou crie estádios personalizados. Simule com base climática média, filtrada por
+            <strong>ENSO</strong> ou por <strong>safra única</strong>.
+          </p>
+          <span style="background:#2d6a4f;color:#fff;padding:3px 12px;
+                       border-radius:99px;font-size:0.8rem;font-weight:600">
+            ✅ Disponível
+          </span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.page_link(
+        "pages/5_🌱_Aptidao_Multicultura.py",
+        label="Abrir módulo →",
+        icon="🌱",
+    )
+
 # ── Rodapé ────────────────────────────────────────────────────────────────
 st.markdown("---")
 st.markdown(
