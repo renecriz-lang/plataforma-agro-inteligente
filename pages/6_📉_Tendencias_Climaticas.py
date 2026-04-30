@@ -366,6 +366,303 @@ else:
     )
     st.plotly_chart(fig_foco, use_container_width=True)
 
-# ── Abas complementares (em construção) ────────────────────────────────────
+# ── Abas complementares ────────────────────────────────────────────────────
 st.markdown("---")
-st.info("📊 Abas complementares em construção — próximo commit.")
+st.markdown("### 📊 Análises complementares")
+
+aba_calend, aba_anual, aba_clim, aba_anom = st.tabs([
+    "📅 Heatmap calendário",
+    "📈 Tendência anual",
+    "🌡️ Climograma sobreposto",
+    "🔥 Anomalias mensais",
+])
+
+# ── Aba 1: Heatmap calendário ───────────────────────────────────────────────
+with aba_calend:
+    st.caption(
+        "Cada célula é um mês de um ano. Cores quentes/frias mostram o valor; "
+        "bordas coloridas indicam a fase ENSO daquele mês."
+    )
+
+    pivot = df_mensal.pivot(index="ano", columns="mes", values="valor")
+    pivot = pivot.sort_index(ascending=False)
+    enso_piv = (
+        df_mensal.pivot(index="ano", columns="mes", values="enso_fenomeno")
+        .reindex(pivot.index)
+    )
+
+    escala_cal = "Blues" if eh_chuva(variavel) else "RdYlBu_r"
+    un = "mm" if eh_chuva(variavel) else "°C"
+
+    fig_cal = go.Figure(data=go.Heatmap(
+        z=pivot.values,
+        x=[MESES_NOMES[m][:3] for m in pivot.columns],
+        y=pivot.index.astype(str),
+        colorscale=escala_cal,
+        colorbar=dict(title=un),
+        hovertemplate=(
+            "Ano: %{y}<br>Mês: %{x}<br>"
+            f"Valor: %{{z:.1f}} {un}<extra></extra>"
+        ),
+    ))
+
+    if mostrar_enso and not enso_piv.empty:
+        anos_list = list(pivot.index)
+        meses_list = list(pivot.columns)
+        for i, ano in enumerate(anos_list):
+            for j, mes in enumerate(meses_list):
+                try:
+                    fase = enso_piv.loc[ano, mes]
+                except KeyError:
+                    continue
+                if fase in ("El Niño", "La Niña"):
+                    fig_cal.add_shape(
+                        type="rect",
+                        x0=j - 0.5, x1=j + 0.5,
+                        y0=i - 0.5, y1=i + 0.5,
+                        line=dict(color=COR_ENSO[fase], width=2),
+                        fillcolor="rgba(0,0,0,0)",
+                    )
+
+    fig_cal.update_layout(
+        title=f"{ROTULOS_VARS[variavel]} — heatmap calendário · {nome_escopo}",
+        height=max(420, 24 * len(pivot)),
+        margin=dict(t=60, b=50, l=70, r=20),
+        xaxis=dict(side="top"),
+        yaxis=dict(autorange="reversed"),
+    )
+    st.plotly_chart(fig_cal, use_container_width=True)
+
+    if mostrar_enso:
+        st.caption(
+            "🔴 Borda vermelha = mês de El Niño  ·  "
+            "🔵 Borda azul = mês de La Niña  ·  (sem borda = Neutro)"
+        )
+
+# ── Aba 2: Tendência anual ──────────────────────────────────────────────────
+with aba_anual:
+    st.caption(
+        "Soma anual (chuva) ou média anual (temperatura). "
+        "Linha de regressão com faixa de confiança 95%."
+    )
+
+    # Fase ENSO predominante por ano
+    fase_anual_s = (
+        df_mensal.groupby("ano")["enso_fenomeno"]
+        .agg(lambda x: x.mode().iloc[0] if not x.mode().empty else "Neutro")
+    )
+    cores_pts = (
+        [COR_ENSO.get(fase_anual_s.get(a, "Neutro"), "#8d99ae") for a in df_anual["ano"]]
+        if mostrar_enso
+        else ["#2d6a4f"] * len(df_anual)
+    )
+
+    fig_an = go.Figure()
+    fig_an.add_trace(go.Scatter(
+        x=df_anual["ano"],
+        y=df_anual["valor"],
+        mode="lines+markers",
+        line=dict(color="#8d99ae", width=2),
+        marker=dict(size=10, color=cores_pts, line=dict(color="white", width=1.5)),
+        name="Anual",
+        customdata=[fase_anual_s.get(a, "—") for a in df_anual["ano"]],
+        hovertemplate=(
+            "<b>%{x}</b><br>Valor: %{y:.1f}<br>ENSO: %{customdata}<extra></extra>"
+        ),
+    ))
+
+    if mostrar_tendencia and len(df_anual) >= 5:
+        x = df_anual["ano"].values
+        y = df_anual["valor"].values
+        slope_a, intercept_a, _, p_a, _ = stats.linregress(x, y)
+
+        # Faixa de confiança 95%
+        from scipy.stats import t as t_dist
+        n = len(x)
+        x_pred = np.linspace(x.min(), x.max(), 60)
+        y_pred = slope_a * x_pred + intercept_a
+        s_err = np.sqrt(np.sum((y - (slope_a * x + intercept_a)) ** 2) / (n - 2))
+        confs = (
+            t_dist.ppf(0.975, n - 2)
+            * s_err
+            * np.sqrt(1 / n + (x_pred - x.mean()) ** 2 / np.sum((x - x.mean()) ** 2))
+        )
+        fig_an.add_trace(go.Scatter(
+            x=np.concatenate([x_pred, x_pred[::-1]]),
+            y=np.concatenate([y_pred + confs, (y_pred - confs)[::-1]]),
+            fill="toself",
+            fillcolor="rgba(45,106,79,0.18)",
+            line=dict(width=0),
+            showlegend=False,
+            hoverinfo="skip",
+        ))
+        fig_an.add_trace(go.Scatter(
+            x=np.array([x.min(), x.max()]),
+            y=slope_a * np.array([x.min(), x.max()]) + intercept_a,
+            mode="lines",
+            line=dict(color="#1b4332", width=2.5, dash="dash"),
+            name=f"Tendência: {slope_a:+.2f}/ano · p={p_a:.3f}",
+        ))
+
+    fig_an.update_layout(
+        title=f"{'Acumulado anual' if eh_chuva(variavel) else 'Média anual'} — {nome_escopo}",
+        xaxis_title="Ano",
+        yaxis_title=ROTULOS_VARS[variavel],
+        height=440,
+        margin=dict(t=50, b=50, l=70, r=20),
+        plot_bgcolor="rgba(0,0,0,0)",
+    )
+    st.plotly_chart(fig_an, use_container_width=True)
+
+# ── Aba 3: Climograma sobreposto ────────────────────────────────────────────
+with aba_clim:
+    st.caption(
+        "Cada linha é um ano sobreposto. Anos atípicos saltam aos olhos. "
+        "Selecione um ano para destacá-lo."
+    )
+
+    anos_disp = sorted(df_mensal["ano"].unique())
+
+    fase_anual_clim = (
+        df_mensal.groupby("ano")["enso_fenomeno"]
+        .agg(lambda x: x.mode().iloc[0] if not x.mode().empty else "Neutro")
+        if mostrar_enso
+        else pd.Series("—", index=anos_disp)
+    )
+
+    ano_destaque = st.selectbox(
+        "Destacar ano",
+        ["—"] + [str(a) for a in anos_disp],
+        index=len(anos_disp),
+        key="tc_ano_destaque",
+    )
+
+    fig_clim = go.Figure()
+    for ano in anos_disp:
+        sub = df_mensal[df_mensal["ano"] == ano].sort_values("mes")
+        if sub.empty:
+            continue
+        fase = fase_anual_clim.get(ano, "Neutro")
+        cor_base = COR_ENSO.get(fase, "#8d99ae") if mostrar_enso else "#8d99ae"
+        eh_dest = str(ano) == ano_destaque
+        fig_clim.add_trace(go.Scatter(
+            x=[MESES_NOMES[m][:3] for m in sub["mes"]],
+            y=sub["valor"],
+            mode="lines+markers" if eh_dest else "lines",
+            line=dict(color=cor_base, width=3.0 if eh_dest else 1.2),
+            opacity=1.0 if eh_dest else 0.28,
+            name=f"{ano} ({fase})" if mostrar_enso else str(ano),
+            showlegend=eh_dest,
+            customdata=[fase] * len(sub),
+            hovertemplate=(
+                f"<b>{ano}</b> — %{{x}}<br>"
+                "Valor: %{y:.1f}<br>ENSO: %{customdata}<extra></extra>"
+            ),
+        ))
+
+    titulo_clim = f"Todos os anos sobrepostos — {nome_escopo}"
+    if ano_destaque != "—":
+        titulo_clim += f"  ·  destaque: {ano_destaque}"
+
+    fig_clim.update_layout(
+        title=titulo_clim,
+        xaxis_title="Mês",
+        yaxis_title=ROTULOS_VARS[variavel],
+        height=480,
+        margin=dict(t=50, b=50, l=70, r=20),
+        plot_bgcolor="rgba(0,0,0,0)",
+    )
+    st.plotly_chart(fig_clim, use_container_width=True)
+
+# ── Aba 4: Anomalias mensais ────────────────────────────────────────────────
+with aba_anom:
+    st.caption(
+        "Diferença de cada mês para a média histórica daquele mesmo mês. "
+        "Vermelho = acima do normal; azul = abaixo. "
+        "Revela padrões que o heatmap absoluto esconde."
+    )
+
+    media_por_mes = df_mensal.groupby("mes")["valor"].mean()
+    df_anom = df_mensal.copy()
+    df_anom["anomalia"] = df_anom.apply(
+        lambda r: r["valor"] - media_por_mes[r["mes"]], axis=1,
+    )
+
+    pivot_anom = df_anom.pivot(index="ano", columns="mes", values="anomalia")
+    pivot_anom = pivot_anom.sort_index(ascending=False)
+    enso_piv_a = (
+        df_mensal.pivot(index="ano", columns="mes", values="enso_fenomeno")
+        .reindex(pivot_anom.index)
+    )
+
+    un_a = "mm" if eh_chuva(variavel) else "°C"
+    # Para chuva: azul = positivo (mais úmido). Para temperatura: vermelho = positivo.
+    escala_anom = "RdBu" if eh_chuva(variavel) else "RdBu_r"
+    val_max = max(
+        abs(float(pivot_anom.min(skipna=True).min())),
+        abs(float(pivot_anom.max(skipna=True).max())),
+    )
+
+    fig_anom = go.Figure(data=go.Heatmap(
+        z=pivot_anom.values,
+        x=[MESES_NOMES[m][:3] for m in pivot_anom.columns],
+        y=pivot_anom.index.astype(str),
+        colorscale=escala_anom,
+        zmid=0, zmin=-val_max, zmax=val_max,
+        colorbar=dict(title=f"Δ {un_a}"),
+        hovertemplate=(
+            "Ano: %{y}<br>Mês: %{x}<br>"
+            f"Anomalia: %{{z:+.1f}} {un_a}<extra></extra>"
+        ),
+    ))
+
+    if mostrar_enso and not enso_piv_a.empty:
+        anos_a = list(pivot_anom.index)
+        meses_a = list(pivot_anom.columns)
+        for i, ano in enumerate(anos_a):
+            for j, mes in enumerate(meses_a):
+                try:
+                    fase = enso_piv_a.loc[ano, mes]
+                except KeyError:
+                    continue
+                if fase in ("El Niño", "La Niña"):
+                    fig_anom.add_shape(
+                        type="rect",
+                        x0=j - 0.5, x1=j + 0.5,
+                        y0=i - 0.5, y1=i + 0.5,
+                        line=dict(color=COR_ENSO[fase], width=2),
+                        fillcolor="rgba(0,0,0,0)",
+                    )
+
+    fig_anom.update_layout(
+        title=f"Anomalias mensais — {nome_escopo}",
+        height=max(420, 24 * len(pivot_anom)),
+        margin=dict(t=60, b=50, l=70, r=20),
+        xaxis=dict(side="top"),
+        yaxis=dict(autorange="reversed"),
+    )
+    st.plotly_chart(fig_anom, use_container_width=True)
+
+    st.caption(
+        "💡 Se você vê uma faixa horizontal em anos recentes para uma coluna "
+        "específica, aquele mês está consistentemente acima/abaixo da norma "
+        "— sinal de mudança climática sustentada."
+    )
+
+# ── Rodapé técnico ──────────────────────────────────────────────────────────
+st.markdown("---")
+with st.expander("ℹ️ Notas técnicas e metodológicas"):
+    st.markdown("""
+- **Escopo geográfico**: para Estado e Brasil, agregamos por **média simples
+  não-ponderada** dos municípios cobertos. Quando arquivos de área municipal
+  forem incorporados, a agregação passará a ser ponderada — mais representativa
+  para precipitação.
+- **Filtro de qualidade**: apenas registros com `flag_cobertura == 'OK'` são
+  usados (~94% da base).
+- **Tendência (regressão linear)**: usa `scipy.stats.linregress`. O p-valor
+  indica significância — `p < 0,05` sugere tendência real, não ruído.
+- **Anomalia mensal**: desvio em relação à média histórica daquele *mesmo mês*
+  dentro do intervalo selecionado.
+- **ENSO**: classificação por decêndio vem da base; agrupamos por moda mensal
+  para tagueamento dos meses e anos.
+""")
