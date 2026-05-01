@@ -27,10 +27,17 @@ env/
 # Resultados temporários gerados em runtime (não versionar)
 resultado_zoneamento_temp.parquet
 gemeos_resultado_temp.parquet
+resultado_multicultura_temp.parquet
+resultado_*_temp.parquet
+*.parquet.tmp
 
 # Base climática compacta — grande demais para o repo
 # Hospedada no GitHub Release v1.0-data; baixada automaticamente na 1ª execução
 data/Base_Clima_Compacta.parquet
+
+# Configs de culturas geradas em runtime (não versionar JSONs; manter pasta)
+data/configs_culturas/*.json
+!data/configs_culturas/.gitkeep
 
 # Arquivos grandes (shapefiles, CSVs intermediários)
 BR_Municipios_2025/
