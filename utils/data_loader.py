@@ -63,7 +63,14 @@ def carregar_base_clima_compacta() -> pd.DataFrame:
                 "`v1.0-data` do repositório `plataforma-agro-inteligente`."
             )
             st.stop()
-    return pd.read_parquet(_CAMINHO_LOCAL_CLIMA)
+    df = pd.read_parquet(_CAMINHO_LOCAL_CLIMA)
+
+    # Calcula tmed_media on-the-fly se não existir na base compacta
+    if "tmed_media" not in df.columns and "tmax_media" in df.columns and "tmin_media" in df.columns:
+        df["tmed_media"] = ((df["tmax_media"].astype("float32")
+                            + df["tmin_media"].astype("float32")) / 2).astype("float32")
+
+    return df
 
 
 @st.cache_data(show_spinner=False)

@@ -663,6 +663,10 @@ with st.expander("ℹ️ Notas técnicas e metodológicas"):
   indica significância — `p < 0,05` sugere tendência real, não ruído.
 - **Anomalia mensal**: desvio em relação à média histórica daquele *mesmo mês*
   dentro do intervalo selecionado.
+- **Temperatura média**: calculada como `(Tmax + Tmin) / 2` a partir das
+  máximas e mínimas decendiais. Difere ligeiramente (<0,3°C tipicamente) da
+  Tmed observada por estações meteorológicas, que é média das temperaturas
+  horárias. Para análise mensal/anual de tendência a aproximação é irrelevante.
 - **ENSO**: classificação por decêndio vem da base; agrupamos por moda mensal
   para tagueamento dos meses e anos.
 """)
