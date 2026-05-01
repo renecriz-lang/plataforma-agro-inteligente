@@ -19,21 +19,30 @@ Repositório GitHub dedicado: `plataforma-agro-inteligente` (separado do `zoneam
 ```
 plataforma-agro-inteligente/          ← raiz do repo GitHub
 ├── app.py                            ← Página inicial (home)
-├── requirements.txt
+├── requirements.txt                  ← inclui plotly e requests
 ├── .streamlit/config.toml            ← Tema visual verde-campo
 ├── data/
-│   └── Base_Clima_media_geral.parquet   ← 4.6 MB, base precomputada, 5573 mun × 151 col
+│   ├── Base_Clima_media_geral.parquet      ← 4.6 MB, wide-format, 5573 mun × 151 col
+│   ├── Base_Producao_Compacta.parquet      ← ~3 MB, produção real por mun × cultura × ano
+│   ├── Base_Resiliencia_PreComp.parquet    ← ~0.1 MB, probabilidades pré-computadas por mun × evento × fase
+│   └── Base_Clima_Compacta.parquet         ← ~33 MB, baixado do GitHub Release v1.0-data na 1ª execução
 ├── pages/
-│   └── 1_🌾_Aptidao_Cevada.py        ← Módulo principal de simulação
+│   ├── 1_🌾_Aptidao_Cevada.py       ← Simulação fenológica (Dias + GDD)
+│   ├── 2_🌍_Gemeos_Climaticos.py    ← Análise de gêmeos climáticos
+│   ├── 3_🌍_Resiliencia_ENSO.py     ← Análise de Resiliência ENSO (4 níveis)
+│   └── 4_📈_Comparador_Cenarios.py  ← Comparador de perfis históricos (anos × ENSO × intensidade)
 └── utils/
     ├── __init__.py
-    ├── data_loader.py                ← Carregamento + seletor de modo
+    ├── data_loader.py                ← Carregamento + 3 funções para módulo ENSO
     ├── simulation.py                 ← Motor matemático (Dias + GDD)
-    └── design.py                     ← CSS global, hero_banner(), badge()
+    ├── design.py                     ← CSS global, hero_banner(), badge()
+    ├── twin_engine.py                ← Motor de gêmeos climáticos
+    └── resiliencia_enso.py           ← Motor ENSO (4 níveis) + agregar_perfil_decendial
 ```
 
-**Arquivo de pré-processamento** (fica no projeto original `Projeto_Ceveda_Agraria/`):
-- `gerar_base_preprocessada.py` — converte o parquet bruto (128 MB) para a base compacta de 4.6 MB.
+**Arquivos de pré-processamento** (ficam em `NOVO APP/`):
+- `gerar_base_preprocessada.py` — base wide para zoneamento (4.6 MB)
+- `gerar_bases_resiliencia.py` — gera as 3 bases do módulo Resiliência ENSO
 
 ---
 
@@ -279,16 +288,39 @@ Os modos atuais são **Dias** e **GDD**. Para adicionar um novo:
 
 ---
 
-## 12. Próximas Implementações Planejadas
+## 12. Módulos Implementados e Próximas Implementações
 
-Modos de agregação temporal a implementar (o usuário dirá como):
+### Módulos implementados
+- [x] **Aptidão da Cevada** — simulação fenológica (Dias + GDD), mapa interativo
+- [x] **Gêmeos Climáticos** — similaridade climática entre municípios (euclidiana Z-score)
+- [x] **Resiliência ENSO** — 4 níveis: probabilidades condicionais, CDF empírica, análogos históricos, validação produtiva real
+- [x] **Comparador de Cenários** — perfis históricos (anos × ENSO × intensidade) sobrepostos em gráfico decendial com faixa p10–p90
+
+### Módulo Resiliência ENSO — arquitetura
+
+**Bases de dados:**
+- `Base_Clima_Compacta.parquet` (~33 MB) — hospedada no GitHub Release `v1.0-data`, baixada na 1ª execução
+- `Base_Producao_Compacta.parquet` (~5 MB) — no repo; produção IBGE/PAM 1987–2024
+- `Base_Resiliencia_PreComp.parquet` (~2 MB) — no repo; probabilidades pré-computadas
+
+**Motor (`utils/resiliencia_enso.py`):**
+- `filtrar_validos()` — mantém apenas `flag_cobertura == 'OK'`
+- `probabilidades_por_enso()` — Nível 1, IC bootstrap (2000 reamostras)
+- `cdf_empirica()` — Nível 2, CDF empírica por fase ENSO
+- `motor_analogos()` — Nível 3, distância euclidiana Z-score
+- `rendimento_por_enso()` — Nível 4, rendimento real × fase ENSO
+- `projecao_rendimento_analogos()` — Nível 4, rendimento real nos anos análogos
+
+**Constantes visuais:** `CORES_ENSO = {"El Niño": "#d1495b", "La Niña": "#2e86ab", "Neutro": "#8d99ae", "TODOS": "#2d6a4f"}`
+
+**Filosofia:** tudo descritivo/empírico — sem modelagem fisiológica, evapotranspiração ou balanço hídrico.
+
+### Modos de agregação temporal a implementar
 - [ ] Filtro por intervalo de anos customizável
 - [ ] Filtro por fenômeno ENSO (La Niña / El Niño / Neutro)
 - [ ] Percentil histórico (ex: pior 20% dos anos)
 
-Módulos de análise futuros:
-- [ ] Gêmeos Climáticos (ML)
-- [ ] Resiliência ENSO
+### Módulos de análise futuros
 - [ ] Expansão e Yield Gap (MapBiomas)
 
 ---
