@@ -54,6 +54,7 @@ hero_banner(
 )
 
 CULTURAS = ["Soja", "Milho", "Feijão", "Trigo", "Cevada"]
+ANO_CORRENTE = 2025
 
 # ── Carga das bases leves (sempre disponíveis) ────────────────────────────────
 df_ref   = load_base("media_geral")
