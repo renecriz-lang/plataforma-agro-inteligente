@@ -637,7 +637,8 @@ if st.session_state.get("mc_show_results") and has_result:
     m = folium.Map(
         location=[df_map["lat"].mean(), df_map["lon"].mean()],
         zoom_start=5,
-        tiles="CartoDB positron",
+        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+        attr="Esri, HERE, Garmin, (c) OpenStreetMap contributors",
     )
 
     for _, row in df_map.iterrows():
