@@ -81,13 +81,56 @@ Cada decêndio representa uma possível data de semeadura e o ciclo completo é 
 identificados por estádio e motivo (excesso/déficit de precipitação, calor excessivo, etc.).
 """)
 
+# ── Preset "Ajustar simulação" (impressão digital de Guarapuava) ───────────
+# Faixas = clima médio de Guarapuava (plantio D17) ±25% na chuva e ±2 °C nas
+# temperaturas, com altitude 800–1300 m: acha ~42 municípios do Centro-Sul do PR
+# e planalto de SC, plantio D16–D18.
+PRESET_DURACOES = [10, 30, 25, 15, 15, 35, 10]
+PRESET_FAIXAS = [  # (prec_min, prec_max, tmed_min, tmed_max, tmin_min, tmin_max)
+    (30.0,  52.0,  11.8, 15.8,  7.8, 11.8),
+    (89.0,  149.0, 11.6, 15.6,  6.7, 10.7),
+    (59.0,  100.0, 12.4, 16.4,  7.3, 11.3),
+    (34.0,  59.0,  13.2, 17.2,  7.8, 11.8),
+    (38.0,  65.0,  15.1, 19.1,  8.3, 12.3),
+    (151.0, 253.0, 15.9, 19.9, 10.6, 14.6),
+    (55.0,  93.0,  16.7, 20.7, 12.1, 16.1),
+]
+PRESET_ALTITUDE = (800, 1300)
+
+
+def _aplicar_preset():
+    ss = st.session_state
+    ss["agg_label"] = AGG_MODES["media_geral"]
+    ss["sim_mode"] = "Duração (Dias)"
+    ss["alt_range"] = PRESET_ALTITUDE
+    for s_idx, dur in enumerate(PRESET_DURACOES):
+        pmin, pmax, tmed_min, tmed_max, tmin_min, tmin_max = PRESET_FAIXAS[s_idx]
+        ss[f"dur_{s_idx}"] = dur
+        ss[f"prec_en_{s_idx}"] = True
+        ss[f"prec_min_{s_idx}"] = pmin
+        ss[f"prec_max_{s_idx}"] = pmax
+        ss[f"tmed_en_{s_idx}"] = True
+        ss[f"tmed_min_{s_idx}"] = tmed_min
+        ss[f"tmed_max_{s_idx}"] = tmed_max
+        ss[f"tmax_en_{s_idx}"] = False
+        ss[f"tmin_en_{s_idx}"] = True
+        ss[f"tmin_min_{s_idx}"] = tmin_min
+        ss[f"tmin_max_{s_idx}"] = tmin_max
+
+
 # ── Painel lateral ─────────────────────────────────────────────────────────
+st.sidebar.button(
+    "🎯 Ajustar simulação", on_click=_aplicar_preset, width="stretch",
+    help="Preenche durações e faixas climáticas com a impressão digital de "
+         "Guarapuava (±25% chuva, ±2 °C, altitude 800–1300 m).",
+)
 st.sidebar.header("⚙️ Configuração Geral")
 
 # Modo de agregação temporal
 agg_label = st.sidebar.selectbox(
     "Base de dados (agregação)",
     options=list(AGG_MODES.values()),
+    key="agg_label",
     help="Define como os dados históricos são condensados por decêndio.",
 )
 agg_key = {v: k for k, v in AGG_MODES.items()}[agg_label]
@@ -96,6 +139,7 @@ agg_key = {v: k for k, v in AGG_MODES.items()}[agg_label]
 sim_mode = st.sidebar.radio(
     "Modo de simulação",
     options=["Duração (Dias)", "Grau-Dia (GDD)"],
+    key="sim_mode",
     help=(
         "**Dias**: cada estádio tem duração fixa em dias.\n\n"
         "**GDD**: a duração de cada estádio é determinada pela acumulação "
@@ -116,6 +160,7 @@ alt_range = st.sidebar.slider(
     "Altitude (m)",
     min_value=alt_min_val, max_value=alt_max_val,
     value=(alt_min_val, alt_max_val), step=10,
+    key="alt_range",
 )
 
 solo_col = df_base["solo_1_ordem"].astype(str).replace("nan", "Não identificado")
