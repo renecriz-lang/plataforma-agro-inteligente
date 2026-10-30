@@ -81,30 +81,62 @@ Cada decêndio representa uma possível data de semeadura e o ciclo completo é 
 identificados por estádio e motivo (excesso/déficit de precipitação, calor excessivo, etc.).
 """)
 
-# ── Preset "Ajustar simulação" (impressão digital de Guarapuava) ───────────
-# Faixas = clima médio de Guarapuava (plantio D17) ±25% na chuva e ±2 °C nas
-# temperaturas, com altitude 800–1300 m: acha ~42 municípios do Centro-Sul do PR
-# e planalto de SC, plantio D16–D18.
+# ── Presets "Ajustar simulação" ────────────────────────────────────────────
+# Mesmas durações de estádio nos dois. Faixas por estádio:
+# (prec_min, prec_max, tmed_min, tmed_max, tmin_min, tmin_max)
+#   A — clima de Guarapuava com plantio de D15 a D19, ±10% chuva e ±1 °C,
+#       altitude 800–1300 m: ~63 municípios do Centro-Sul PR / planalto SC,
+#       Guarapuava apta de D14 a D19.
+#   B — envelope dos 20 maiores produtores de cevada (PAM, média 2015+) com
+#       plantio de D16 a D18, sem filtro de altitude: acha os 20 produtores,
+#       mas marca ~800 municípios do Sul.
 PRESET_DURACOES = [10, 30, 25, 15, 15, 35, 10]
-PRESET_FAIXAS = [  # (prec_min, prec_max, tmed_min, tmed_max, tmin_min, tmin_max)
-    (30.0,  52.0,  11.8, 15.8,  7.8, 11.8),
-    (89.0,  149.0, 11.6, 15.6,  6.7, 10.7),
-    (59.0,  100.0, 12.4, 16.4,  7.3, 11.3),
-    (34.0,  59.0,  13.2, 17.2,  7.8, 11.8),
-    (38.0,  65.0,  15.1, 19.1,  8.3, 12.3),
-    (151.0, 253.0, 15.9, 19.9, 10.6, 14.6),
-    (55.0,  93.0,  16.7, 20.7, 12.1, 16.1),
-]
-PRESET_ALTITUDE = (800, 1300)
+PRESETS = {
+    "A": dict(
+        label="🎯 A · Guarapuava (maio–jul)",
+        help="Clima de Guarapuava com plantio de 21/05 a 10/07 (±10% chuva, "
+             "±1 °C), altitude 800–1300 m.",
+        altitude=(800, 1300),
+        faixas=[
+            (20.0,  76.0,  12.1, 15.5,  7.7, 11.8),
+            (86.0,  176.0, 12.5, 15.2,  7.7, 10.8),
+            (71.0,  100.0, 12.5, 16.4,  7.7, 10.9),
+            (38.0,  70.0,  13.4, 18.6,  8.2, 13.2),
+            (33.0,  88.0,  13.8, 18.8,  8.8, 13.7),
+            (110.0, 261.0, 16.0, 19.5,  9.3, 14.7),
+            (41.0,  82.0,  16.6, 20.2, 11.6, 15.2),
+        ],
+    ),
+    "B": dict(
+        label="🌾 B · 20 maiores produtores",
+        help="Faixa que cobre o clima dos 20 maiores produtores de cevada "
+             "(plantio de 01/06 a 30/06), sem filtro de altitude.",
+        altitude=None,
+        faixas=[
+            (21.0,  79.0,  11.1, 16.9,  6.9, 12.8),
+            (57.0,  195.0, 11.2, 16.6,  6.6, 11.4),
+            (32.0,  130.0, 11.6, 17.6,  6.9, 11.9),
+            (22.0,  77.0,  12.4, 19.2,  7.9, 12.7),
+            (27.0,  92.0,  13.2, 20.6,  7.9, 14.2),
+            (108.0, 254.0, 14.7, 20.7,  9.8, 14.8),
+            (42.0,  82.0,  15.7, 21.1, 10.9, 16.5),
+        ],
+    ),
+}
 
 
-def _aplicar_preset():
+def _aplicar_preset(nome: str):
+    preset = PRESETS[nome]
     ss = st.session_state
     ss["agg_label"] = AGG_MODES["media_geral"]
     ss["sim_mode"] = "Duração (Dias)"
-    ss["alt_range"] = PRESET_ALTITUDE
+    if preset["altitude"]:
+        ss["alt_range"] = preset["altitude"]
+    else:
+        alt = load_base("media_geral")["altitude_media"].dropna()
+        ss["alt_range"] = (int(alt.min()), int(alt.max()))
     for s_idx, dur in enumerate(PRESET_DURACOES):
-        pmin, pmax, tmed_min, tmed_max, tmin_min, tmin_max = PRESET_FAIXAS[s_idx]
+        pmin, pmax, tmed_min, tmed_max, tmin_min, tmin_max = preset["faixas"][s_idx]
         ss[f"dur_{s_idx}"] = dur
         ss[f"prec_en_{s_idx}"] = True
         ss[f"prec_min_{s_idx}"] = pmin
@@ -119,11 +151,12 @@ def _aplicar_preset():
 
 
 # ── Painel lateral ─────────────────────────────────────────────────────────
-st.sidebar.button(
-    "🎯 Ajustar simulação", on_click=_aplicar_preset, width="stretch",
-    help="Preenche durações e faixas climáticas com a impressão digital de "
-         "Guarapuava (±25% chuva, ±2 °C, altitude 800–1300 m).",
-)
+st.sidebar.markdown("**Ajustar simulação**")
+for _nome, _preset in PRESETS.items():
+    st.sidebar.button(
+        _preset["label"], on_click=_aplicar_preset, args=(_nome,),
+        width="stretch", help=_preset["help"], key=f"preset_{_nome}",
+    )
 st.sidebar.header("⚙️ Configuração Geral")
 
 # Modo de agregação temporal
